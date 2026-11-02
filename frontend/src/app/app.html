@@ -1,0 +1,39 @@
+<mat-toolbar class="toolbar">
+  <a class="brand" routerLink="/">
+    <span class="brand-icon"><mat-icon>local_hospital</mat-icon></span>
+    <span class="brand-text">
+      <span class="brand-name">DAVITA</span>
+      <span class="brand-sub">Demographics Database</span>
+    </span>
+  </a>
+  <span class="spacer"></span>
+  @if (auth.isAuthed()) {
+    <nav>
+      <a mat-button routerLink="/" routerLinkActive="active"
+         [routerLinkActiveOptions]="{ exact: true }">Dashboard</a>
+      <a mat-button routerLink="/patients" routerLinkActive="active">Patients</a>
+      <a mat-button routerLink="/physicians" routerLinkActive="active">Physicians</a>
+      <a mat-button routerLink="/facilities" routerLinkActive="active">Facilities</a>
+      <a mat-button routerLink="/insurance" routerLinkActive="active">Insurance</a>
+      <a mat-button routerLink="/network" routerLinkActive="active">Network</a>
+      @if (auth.canDelete()) {
+        <a mat-button routerLink="/users" routerLinkActive="active">Users</a>
+      }
+    </nav>
+    <span class="user-chip">
+      <mat-icon>account_circle</mat-icon>
+      {{ auth.user()?.username }}
+      <span class="role-badge">{{ auth.user()?.role }}</span>
+    </span>
+    <button mat-icon-button (click)="auth.logout()" title="Sign out">
+      <mat-icon>logout</mat-icon>
+    </button>
+  } @else {
+    <a mat-button routerLink="/login">
+      <mat-icon>login</mat-icon> Sign in
+    </a>
+  }
+</mat-toolbar>
+<main class="content">
+  <router-outlet />
+</main>

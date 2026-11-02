@@ -1,0 +1,382 @@
+<div class="page">
+  <h1 class="page-title"><mat-icon>health_and_safety</mat-icon>Insurance</h1>
+
+  <mat-card>
+    <mat-card-header>
+      <mat-card-title>Coverage Records</mat-card-title>
+      <mat-card-subtitle class="card-hint">
+        All insurance policies across patients — use Actions to edit or delete
+      </mat-card-subtitle>
+    </mat-card-header>
+    <mat-card-content>
+      <div class="table-toolbar">
+        <mat-form-field class="search-box">
+          <mat-icon matPrefix>search</mat-icon>
+          <input matInput [ngModel]="query()"
+                 (ngModelChange)="query.set($event)"
+                 placeholder="Filter by patient, MRN, payer, policy…">
+        </mat-form-field>
+        <button mat-stroked-button (click)="exportCsv()"
+                [disabled]="!filtered().length">
+          <mat-icon>download</mat-icon> CSV
+        </button>
+        <span class="spacer"></span>
+        @if (auth.canWrite()) {
+          <button mat-flat-button color="primary" (click)="reset()">
+            <mat-icon>add_card</mat-icon> Add Coverage
+          </button>
+        }
+      </div>
+
+      @if (filtered().length) {
+        <table mat-table matSort (matSortChange)="onSort($event)"
+               [dataSource]="paged()" class="grid">
+          <ng-container matColumnDef="patient">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Patient</th>
+            <td mat-cell *matCellDef="let r">
+              {{ r.last_name }}, {{ r.first_name }}
+              <span class="card-hint">{{ r.mrn }}</span>
+            </td>
+          </ng-container>
+          <ng-container matColumnDef="priority">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Priority</th>
+            <td mat-cell *matCellDef="let r">
+              <span class="pill pill-{{ r.priority_order }}">
+                {{ priorityLabel(r.priority_order) }}
+              </span>
+            </td>
+          </ng-container>
+          <ng-container matColumnDef="payer">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Payer</th>
+            <td mat-cell *matCellDef="let r">{{ r.payer_name || '—' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="policy">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Policy / Member ID</th>
+            <td mat-cell *matCellDef="let r">{{ r.policy_number || '—' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="plan">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Plan</th>
+            <td mat-cell *matCellDef="let r">{{ r.plan_type || '—' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="verified">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Verified</th>
+            <td mat-cell *matCellDef="let r">
+              <span class="pill {{ r.is_verified ? 'pill-yes' : 'pill-no' }}">
+                {{ r.is_verified ? '✓ Verified' : 'Unverified' }}
+              </span>
+            </td>
+          </ng-container>
+          <ng-container matColumnDef="dates">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Effective</th>
+            <td mat-cell *matCellDef="let r">
+              {{ r.effective_date || '—' }}
+              {{ r.termination_date ? '→ ' + r.termination_date : '' }}
+            </td>
+          </ng-container>
+          <ng-container matColumnDef="actions">
+            <th mat-header-cell *matHeaderCellDef>Actions</th>
+            <td mat-cell *matCellDef="let r">
+              @if (auth.canWrite()) {
+                <button mat-icon-button color="primary"
+                        (click)="select(r); $event.stopPropagation()"
+                        title="Edit">
+                  <mat-icon>edit</mat-icon>
+                </button>
+              }
+              @if (auth.canDelete()) {
+                <button mat-icon-button color="warn" (click)="remove(r, $event)"
+                        title="Delete">
+                  <mat-icon>delete</mat-icon>
+                </button>
+              }
+            </td>
+          </ng-container>
+          <tr mat-header-row *matHeaderRowDef="cols"></tr>
+          <tr mat-row *matRowDef="let row; columns: cols"
+              (click)="auth.canWrite() && select(row)"
+              [class.selected]="editing()?.id === row.id"></tr>
+        </table>
+        <mat-paginator [length]="filtered().length" [pageSize]="pageSize()"
+                       [pageSizeOptions]="[10, 25, 50]"
+                       (page)="onPage($event)" />
+      } @else {
+        <div class="empty-state">
+          No coverage records — pick a patient and add one below.
+        </div>
+      }
+    </mat-card-content>
+  </mat-card>
+
+  @if (auth.canWrite()) {
+  <mat-card id="edit-form">
+    <mat-card-header>
+      <mat-card-title>
+        {{ editing() ? 'Edit Coverage #' + editing()!.id : 'Add Coverage' }}
+      </mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      @if (errors().length) {
+        <div class="errors">
+          @for (e of errors(); track e) { <div>⚠ {{ e }}</div> }
+        </div>
+      }
+      <form (ngSubmit)="save()">
+        <div class="form-grid">
+          <mat-form-field class="span2"><mat-label>Patient *</mat-label>
+            <mat-select [(ngModel)]="form.patient_id" name="patient"
+                        required [disabled]="!!editing()">
+              @if (!patients().length) {
+                <mat-option [disabled]="true" [value]="null">
+                  No patients yet — add one on the Patients page
+                </mat-option>
+              }
+              @for (p of patients(); track p.id) {
+                <mat-option [value]="p.id">
+                  {{ p.last_name }}, {{ p.first_name }} ({{ p.mrn || 'no MRN' }})
+                </mat-option>
+              }
+            </mat-select>
+            <mat-hint>
+              {{ editing() ? 'Coverage belongs to this patient — cannot reassign'
+                           : 'Which patient does this policy belong to?' }}
+            </mat-hint>
+          </mat-form-field>
+          <mat-form-field><mat-label>Priority *</mat-label>
+            <mat-select [(ngModel)]="form.priority_order" name="priority" required>
+              @for (p of priorities; track p.value) {
+                <mat-option [value]="p.value">{{ p.label }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+          <mat-form-field class="span2"><mat-label>Insurer / Payer *</mat-label>
+            <mat-select [(ngModel)]="form.insurer_id" name="insurer" required>
+              <mat-option [value]="null">—</mat-option>
+              @for (i of insurers(); track i.id) {
+                <mat-option [value]="i.id">{{ i.payer_name }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+          @if (isOther) {
+            <mat-form-field class="span2"><mat-label>Specify Payer *</mat-label>
+              <input matInput [(ngModel)]="form.payer_other" name="payer_other"
+                     required>
+            </mat-form-field>
+          }
+          @if (showPolicy) {
+            <mat-form-field class="span2">
+              <mat-label>
+                {{ isMedicare ? 'MBI — Medicare Beneficiary ID *'
+                              : 'Policy # / Member ID *' }}
+              </mat-label>
+              <input matInput [(ngModel)]="form.policy_number"
+                     name="policy_number" required
+                     [placeholder]="isMedicare ? 'e.g. 1EG4-TE5-MK73' : ''">
+            </mat-form-field>
+          }
+          <mat-form-field><mat-label>Group #</mat-label>
+            <input matInput [(ngModel)]="form.group_number" name="group_number">
+            <mat-hint>Employer/group plan ID — N/A for Medicare &amp; Medicaid</mat-hint>
+          </mat-form-field>
+          <mat-form-field><mat-label>Plan Type</mat-label>
+            <mat-select [(ngModel)]="form.plan_type" name="plan_type">
+              <mat-option [value]="null">—</mat-option>
+              @for (t of planTypes(); track t) {
+                <mat-option [value]="t">{{ t }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+          <mat-form-field><mat-label>Subscriber Relationship</mat-label>
+            <mat-select [(ngModel)]="form.subscriber_rel" name="rel">
+              <mat-option [value]="null">—</mat-option>
+              @for (r of relationships(); track r) {
+                <mat-option [value]="r">{{ r }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+          @if (form.subscriber_rel && form.subscriber_rel !== 'Self') {
+            <mat-form-field><mat-label>Subscriber First Name</mat-label>
+              <input matInput [(ngModel)]="form.subscriber_first_name"
+                     name="sub_first">
+            </mat-form-field>
+            <mat-form-field><mat-label>Subscriber Last Name</mat-label>
+              <input matInput [(ngModel)]="form.subscriber_last_name"
+                     name="sub_last">
+            </mat-form-field>
+            <mat-form-field><mat-label>Subscriber DOB</mat-label>
+              <input matInput type="date" [(ngModel)]="form.subscriber_dob"
+                     name="sub_dob">
+            </mat-form-field>
+          }
+          <mat-form-field><mat-label>PCP Copay ($)</mat-label>
+            <input matInput type="number" min="0" step="0.01"
+                   [(ngModel)]="form.copay_primary_care" name="copay_pcp">
+          </mat-form-field>
+          <mat-form-field><mat-label>Specialist Copay ($)</mat-label>
+            <input matInput type="number" min="0" step="0.01"
+                   [(ngModel)]="form.copay_specialist" name="copay_spec">
+          </mat-form-field>
+          <mat-form-field><mat-label>Effective Date</mat-label>
+            <input matInput type="date" [(ngModel)]="form.effective_date"
+                   name="eff">
+          </mat-form-field>
+          <mat-form-field><mat-label>Termination Date</mat-label>
+            <input matInput type="date" [(ngModel)]="form.termination_date"
+                   name="term">
+          </mat-form-field>
+          <div class="verified-row">
+            <mat-checkbox [(ngModel)]="form.is_verified" name="verified">
+              Eligibility verified
+            </mat-checkbox>
+            @if (form.is_verified) {
+              <mat-form-field><mat-label>Verification Date</mat-label>
+                <input matInput type="date" [(ngModel)]="form.verification_date"
+                       name="ver_date">
+              </mat-form-field>
+            }
+          </div>
+        </div>
+        <div class="form-actions">
+          <button mat-flat-button color="primary" type="submit">
+            {{ editing() ? 'Save Coverage' : 'Add Coverage' }}
+          </button>
+          @if (editing()) {
+            <button mat-button type="button" (click)="reset()">Cancel</button>
+          }
+        </div>
+      </form>
+    </mat-card-content>
+  </mat-card>
+  }
+
+  <mat-card>
+    <mat-card-header>
+      <mat-card-title>Payer / Insurer Directory</mat-card-title>
+      <mat-card-subtitle class="card-hint">
+        Master list of insurance companies — used by every coverage record
+      </mat-card-subtitle>
+    </mat-card-header>
+    <mat-card-content>
+      @if (insurers().length) {
+        <table mat-table [dataSource]="insurers()" class="grid">
+          <ng-container matColumnDef="name">
+            <th mat-header-cell *matHeaderCellDef>Payer Name</th>
+            <td mat-cell *matCellDef="let r">{{ r.payer_name }}</td>
+          </ng-container>
+          <ng-container matColumnDef="code">
+            <th mat-header-cell *matHeaderCellDef>Payer Code</th>
+            <td mat-cell *matCellDef="let r">{{ r.payer_code || '—' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="payer_id">
+            <th mat-header-cell *matHeaderCellDef>EDI Payer ID</th>
+            <td mat-cell *matCellDef="let r">{{ r.payer_id || '—' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="phone">
+            <th mat-header-cell *matHeaderCellDef>Support Phone</th>
+            <td mat-cell *matCellDef="let r">{{ r.phone_support || '—' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="location">
+            <th mat-header-cell *matHeaderCellDef>Location</th>
+            <td mat-cell *matCellDef="let r">
+              {{ r.city || '—' }}{{ r.state ? ', ' + r.state : '' }}
+            </td>
+          </ng-container>
+          <ng-container matColumnDef="actions">
+            <th mat-header-cell *matHeaderCellDef>Actions</th>
+            <td mat-cell *matCellDef="let r">
+              @if (auth.canWrite()) {
+                <button mat-icon-button color="primary"
+                        (click)="selectInsurer(r); $event.stopPropagation()"
+                        title="Edit">
+                  <mat-icon>edit</mat-icon>
+                </button>
+              }
+              @if (auth.canDelete()) {
+                <button mat-icon-button color="warn"
+                        (click)="removeInsurer(r, $event)" title="Delete">
+                  <mat-icon>delete</mat-icon>
+                </button>
+              }
+            </td>
+          </ng-container>
+          <tr mat-header-row *matHeaderRowDef="insurerCols"></tr>
+          <tr mat-row *matRowDef="let row; columns: insurerCols"
+              (click)="auth.canWrite() && selectInsurer(row)"
+              [class.selected]="insurerEditing()?.id === row.id"></tr>
+        </table>
+      } @else {
+        <div class="empty-state">No insurers on file.</div>
+      }
+    </mat-card-content>
+  </mat-card>
+
+  @if (auth.canWrite()) {
+  <mat-card id="insurer-form">
+    <mat-card-header>
+      <mat-card-title>
+        {{ insurerEditing() ? 'Edit Insurer #' + insurerEditing()!.id : 'Add Insurer' }}
+      </mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      @if (insurerErrors().length) {
+        <div class="errors">
+          @for (e of insurerErrors(); track e) { <div>⚠ {{ e }}</div> }
+        </div>
+      }
+      <form (ngSubmit)="saveInsurer()">
+        <div class="form-grid">
+          <mat-form-field class="span2"><mat-label>Payer Name *</mat-label>
+            <input matInput [(ngModel)]="insurerForm.payer_name"
+                   name="payer_name" required>
+          </mat-form-field>
+          <mat-form-field><mat-label>Payer Code</mat-label>
+            <mat-select [(ngModel)]="insurerForm.payer_code" name="payer_code">
+              <mat-option [value]="null">— (custom payer)</mat-option>
+              @for (o of payerCodes(); track o.value) {
+                <mat-option [value]="o.value">{{ o.label }}</mat-option>
+              }
+            </mat-select>
+            <mat-hint>Standard menu code, if this payer is one</mat-hint>
+          </mat-form-field>
+          <mat-form-field><mat-label>EDI Payer ID</mat-label>
+            <input matInput [(ngModel)]="insurerForm.payer_id" name="payer_id"
+                   placeholder="e.g. 87726">
+            <mat-hint>ID used on electronic claims</mat-hint>
+          </mat-form-field>
+          <mat-form-field><mat-label>Support Phone</mat-label>
+            <input matInput [(ngModel)]="insurerForm.phone_support"
+                   name="phone_support">
+          </mat-form-field>
+          <mat-form-field class="span2"><mat-label>Address Line 1</mat-label>
+            <input matInput [(ngModel)]="insurerForm.address_line1" name="a1">
+          </mat-form-field>
+          <mat-form-field class="span2"><mat-label>Address Line 2</mat-label>
+            <input matInput [(ngModel)]="insurerForm.address_line2" name="a2">
+          </mat-form-field>
+          <mat-form-field><mat-label>City</mat-label>
+            <input matInput [(ngModel)]="insurerForm.city" name="city">
+          </mat-form-field>
+          <mat-form-field><mat-label>State</mat-label>
+            <mat-select [(ngModel)]="insurerForm.state" name="state">
+              @for (s of states; track s) {
+                <mat-option [value]="s">{{ s || '—' }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+          <mat-form-field><mat-label>Postal Code</mat-label>
+            <input matInput [(ngModel)]="insurerForm.postal_code"
+                   name="postal_code">
+          </mat-form-field>
+        </div>
+        <div class="form-actions">
+          <button mat-flat-button color="primary" type="submit">
+            {{ insurerEditing() ? 'Save Insurer' : 'Add Insurer' }}
+          </button>
+          @if (insurerEditing()) {
+            <button mat-button type="button" (click)="resetInsurer()">Cancel</button>
+          }
+        </div>
+      </form>
+    </mat-card-content>
+  </mat-card>
+  }
+</div>

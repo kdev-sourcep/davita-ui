@@ -1,0 +1,193 @@
+<div class="page">
+  <h1 class="page-title"><mat-icon>domain</mat-icon>Facilities</h1>
+
+  <mat-card class="map-card">
+    <mat-card-header>
+      <mat-card-title>Facility Locations</mat-card-title>
+      <mat-card-subtitle class="card-hint">
+        States shaded by facility count — hover for details,
+        click a state to filter the table
+      </mat-card-subtitle>
+    </mat-card-header>
+    <mat-card-content>
+      <div #mapHost class="map-host"></div>
+      <div class="map-legend">
+        <span class="legend-swatch empty"></span> 0
+        <span class="legend-bar"></span> {{ maxCount() }}+
+        facilities
+        <span class="spacer"></span>
+        @if (stateFilter()) {
+          <span class="pill pill-1">Filtered: {{ stateFilter() }}</span>
+          <button mat-button (click)="stateFilter.set(null)">Clear</button>
+        }
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+  <mat-card>
+    <mat-card-header>
+      <mat-card-title>Facility Records</mat-card-title>
+      <mat-card-subtitle class="card-hint">
+        Use the Actions column to edit or delete a record
+      </mat-card-subtitle>
+    </mat-card-header>
+    <mat-card-content>
+      <div class="table-toolbar">
+        <mat-form-field class="search-box">
+          <mat-icon matPrefix>search</mat-icon>
+          <input matInput [ngModel]="query()"
+                 (ngModelChange)="query.set($event)"
+                 placeholder="Filter facilities…">
+        </mat-form-field>
+        <button mat-stroked-button (click)="exportCsv()"
+                [disabled]="!filtered().length">
+          <mat-icon>download</mat-icon> CSV
+        </button>
+        <span class="spacer"></span>
+        @if (auth.canWrite()) {
+          <button mat-flat-button color="primary" (click)="reset()">
+            <mat-icon>add_business</mat-icon> Add Facility
+          </button>
+        }
+      </div>
+      @if (filtered().length) {
+        <table mat-table matSort (matSortChange)="onSort($event)"
+               [dataSource]="paged()" class="grid">
+          <ng-container matColumnDef="id">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>ID</th>
+            <td mat-cell *matCellDef="let r">{{ r.id }}</td>
+          </ng-container>
+          <ng-container matColumnDef="name">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Facility</th>
+            <td mat-cell *matCellDef="let r">{{ r.facility_name }}</td>
+          </ng-container>
+          <ng-container matColumnDef="ccn">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>CCN</th>
+            <td mat-cell *matCellDef="let r">{{ r.ccn || '—' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="type">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Type</th>
+            <td mat-cell *matCellDef="let r">{{ r.facility_type || '—' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="phone">
+            <th mat-header-cell *matHeaderCellDef>Phone</th>
+            <td mat-cell *matCellDef="let r">{{ r.phone || '—' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="location">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Location</th>
+            <td mat-cell *matCellDef="let r">
+              {{ r.city || '—' }}{{ r.state ? ', ' + r.state : '' }}
+            </td>
+          </ng-container>
+          <ng-container matColumnDef="stations">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Stations</th>
+            <td mat-cell *matCellDef="let r">{{ r.station_count ?? '—' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="actions">
+            <th mat-header-cell *matHeaderCellDef>Actions</th>
+            <td mat-cell *matCellDef="let r">
+              @if (auth.canWrite()) {
+                <button mat-icon-button color="primary"
+                        (click)="select(r); $event.stopPropagation()"
+                        title="Edit">
+                  <mat-icon>edit</mat-icon>
+                </button>
+              }
+              @if (auth.canDelete()) {
+                <button mat-icon-button color="warn" (click)="remove(r, $event)"
+                        title="Delete">
+                  <mat-icon>delete</mat-icon>
+                </button>
+              }
+            </td>
+          </ng-container>
+          <tr mat-header-row *matHeaderRowDef="cols"></tr>
+          <tr mat-row *matRowDef="let row; columns: cols"
+              (click)="auth.canWrite() && select(row)"
+              [class.selected]="editing()?.id === row.id"></tr>
+        </table>
+        <mat-paginator [length]="filtered().length" [pageSize]="pageSize()"
+                       [pageSizeOptions]="[10, 25, 50]"
+                       (page)="onPage($event)" />
+      } @else {
+        <div class="empty-state">No facilities yet — use the form below to add one.</div>
+      }
+    </mat-card-content>
+  </mat-card>
+
+  @if (auth.canWrite()) {
+  <mat-card id="edit-form">
+    <mat-card-header>
+      <mat-card-title>
+        {{ editing() ? 'Edit Facility #' + editing()!.id : 'Add Facility' }}
+      </mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      @if (errors().length) {
+        <div class="errors">
+          @for (e of errors(); track e) { <div>⚠ {{ e }}</div> }
+        </div>
+      }
+      <form (ngSubmit)="save()">
+        <div class="form-grid">
+          <mat-form-field class="span2"><mat-label>Facility Name *</mat-label>
+            <input matInput [(ngModel)]="form.facility_name" name="name" required>
+          </mat-form-field>
+          <mat-form-field><mat-label>CCN</mat-label>
+            <input matInput [(ngModel)]="form.ccn" name="ccn"
+                   placeholder="6-char CMS cert #">
+          </mat-form-field>
+          <mat-form-field><mat-label>Facility Type</mat-label>
+            <mat-select [(ngModel)]="form.facility_type" name="type">
+              <mat-option [value]="null">—</mat-option>
+              @for (t of facilityTypes(); track t) {
+                <mat-option [value]="t">{{ t }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+          <mat-form-field><mat-label>Phone</mat-label>
+            <input matInput [(ngModel)]="form.phone" name="phone">
+          </mat-form-field>
+          <mat-form-field><mat-label>Fax</mat-label>
+            <input matInput [(ngModel)]="form.fax" name="fax">
+          </mat-form-field>
+          <mat-form-field><mat-label>Email</mat-label>
+            <input matInput [(ngModel)]="form.email" name="email">
+          </mat-form-field>
+          <mat-form-field><mat-label>Dialysis Stations</mat-label>
+            <input matInput type="number" min="0"
+                   [(ngModel)]="form.station_count" name="stations">
+          </mat-form-field>
+          <mat-form-field class="span2"><mat-label>Address Line 1</mat-label>
+            <input matInput [(ngModel)]="form.address_line1" name="a1">
+          </mat-form-field>
+          <mat-form-field class="span2"><mat-label>Address Line 2</mat-label>
+            <input matInput [(ngModel)]="form.address_line2" name="a2">
+          </mat-form-field>
+          <mat-form-field><mat-label>City</mat-label>
+            <input matInput [(ngModel)]="form.city" name="city">
+          </mat-form-field>
+          <mat-form-field><mat-label>State</mat-label>
+            <mat-select [(ngModel)]="form.state" name="state">
+              @for (s of states; track s) {
+                <mat-option [value]="s">{{ s || '—' }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+          <mat-form-field><mat-label>ZIP</mat-label>
+            <input matInput [(ngModel)]="form.zip" name="zip">
+          </mat-form-field>
+        </div>
+        <div class="form-actions">
+          <button mat-flat-button color="primary" type="submit">
+            {{ editing() ? 'Save Changes' : 'Create Facility' }}
+          </button>
+          @if (editing()) {
+            <button mat-button type="button" (click)="reset()">Cancel</button>
+          }
+        </div>
+      </form>
+    </mat-card-content>
+  </mat-card>
+  }
+</div>

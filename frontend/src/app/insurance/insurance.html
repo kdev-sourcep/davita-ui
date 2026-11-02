@@ -1,0 +1,190 @@
+<mat-card>
+  <mat-card-header>
+    <mat-card-title>Insurance Coverage</mat-card-title>
+    <mat-card-subtitle class="card-hint">
+      Primary, secondary and tertiary policies — use Actions to edit or delete
+    </mat-card-subtitle>
+  </mat-card-header>
+  <mat-card-content>
+    @if (coverages().length) {
+      <table mat-table [dataSource]="coverages()" class="grid">
+        <ng-container matColumnDef="priority">
+          <th mat-header-cell *matHeaderCellDef>Priority</th>
+          <td mat-cell *matCellDef="let r">
+            <span class="pill pill-{{ r.priority_order }}">
+              {{ priorityLabel(r.priority_order) }}
+            </span>
+          </td>
+        </ng-container>
+        <ng-container matColumnDef="payer">
+          <th mat-header-cell *matHeaderCellDef>Payer</th>
+          <td mat-cell *matCellDef="let r">{{ r.payer_name || '—' }}</td>
+        </ng-container>
+        <ng-container matColumnDef="policy">
+          <th mat-header-cell *matHeaderCellDef>Policy / Member ID</th>
+          <td mat-cell *matCellDef="let r">
+            {{ r.policy_number || '—' }}
+            <span class="card-hint">
+              {{ r.is_verified ? '✓ verified' : 'unverified' }}
+            </span>
+          </td>
+        </ng-container>
+        <ng-container matColumnDef="plan">
+          <th mat-header-cell *matHeaderCellDef>Plan</th>
+          <td mat-cell *matCellDef="let r">
+            {{ r.plan_type || '—' }}{{ r.group_number ? ' · grp ' + r.group_number : '' }}
+          </td>
+        </ng-container>
+        <ng-container matColumnDef="subscriber">
+          <th mat-header-cell *matHeaderCellDef>Subscriber</th>
+          <td mat-cell *matCellDef="let r">
+            {{ r.subscriber_rel || '—' }}{{ r.subscriber_name ? ' — ' + r.subscriber_name : '' }}
+          </td>
+        </ng-container>
+        <ng-container matColumnDef="dates">
+          <th mat-header-cell *matHeaderCellDef>Effective</th>
+          <td mat-cell *matCellDef="let r">
+            {{ r.effective_date || '—' }}
+            {{ r.termination_date ? '→ ' + r.termination_date : '' }}
+          </td>
+        </ng-container>
+        <ng-container matColumnDef="actions">
+          <th mat-header-cell *matHeaderCellDef>Actions</th>
+          <td mat-cell *matCellDef="let r">
+            <button mat-icon-button color="primary"
+                    (click)="select(r); $event.stopPropagation()"
+                    title="Edit">
+              <mat-icon>edit</mat-icon>
+            </button>
+            @if (auth.canDelete()) {
+              <button mat-icon-button color="warn" (click)="remove(r, $event)"
+                      title="Delete">
+                <mat-icon>delete</mat-icon>
+              </button>
+            }
+          </td>
+        </ng-container>
+        <tr mat-header-row *matHeaderRowDef="cols"></tr>
+        <tr mat-row *matRowDef="let row; columns: cols"
+            (click)="select(row)"
+            [class.selected]="editing()?.id === row.id"></tr>
+      </table>
+    } @else {
+      <div class="empty-state">
+        No coverage on file — add the patient's insurance below.
+      </div>
+    }
+
+    @if (errors().length) {
+      <div class="errors">
+        @for (e of errors(); track e) { <div>⚠ {{ e }}</div> }
+      </div>
+    }
+
+    <form (ngSubmit)="save()">
+      <div class="form-grid">
+        <mat-form-field><mat-label>Priority *</mat-label>
+          <mat-select [(ngModel)]="form.priority_order" name="priority" required>
+            @for (p of priorities; track p.value) {
+              <mat-option [value]="p.value">{{ p.label }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+        <mat-form-field class="span2"><mat-label>Insurer / Payer *</mat-label>
+          <mat-select [(ngModel)]="form.insurer_id" name="insurer" required>
+            <mat-option [value]="null">—</mat-option>
+            @for (i of insurers(); track i.id) {
+              <mat-option [value]="i.id">{{ i.payer_name }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+        @if (isOther) {
+          <mat-form-field class="span2"><mat-label>Specify Payer *</mat-label>
+            <input matInput [(ngModel)]="form.payer_other" name="payer_other"
+                   required>
+          </mat-form-field>
+        }
+        @if (showPolicy) {
+          <mat-form-field class="span2">
+            <mat-label>
+              {{ isMedicare ? 'MBI — Medicare Beneficiary ID *'
+                            : 'Policy # / Member ID *' }}
+            </mat-label>
+            <input matInput [(ngModel)]="form.policy_number" name="policy_number"
+                   required
+                   [placeholder]="isMedicare ? 'e.g. 1EG4-TE5-MK73' : ''">
+          </mat-form-field>
+        }
+        <mat-form-field><mat-label>Group #</mat-label>
+          <input matInput [(ngModel)]="form.group_number" name="group_number">
+          <mat-hint>Employer/group plan ID — N/A for Medicare &amp; Medicaid</mat-hint>
+        </mat-form-field>
+        <mat-form-field><mat-label>Plan Type</mat-label>
+          <mat-select [(ngModel)]="form.plan_type" name="plan_type">
+            <mat-option [value]="null">—</mat-option>
+            @for (t of planTypes(); track t) {
+              <mat-option [value]="t">{{ t }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+        <mat-form-field><mat-label>Subscriber Relationship</mat-label>
+          <mat-select [(ngModel)]="form.subscriber_rel" name="rel">
+            <mat-option [value]="null">—</mat-option>
+            @for (r of relationships(); track r) {
+              <mat-option [value]="r">{{ r }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+        @if (form.subscriber_rel && form.subscriber_rel !== 'Self') {
+          <mat-form-field><mat-label>Subscriber First Name</mat-label>
+            <input matInput [(ngModel)]="form.subscriber_first_name"
+                   name="sub_first">
+          </mat-form-field>
+          <mat-form-field><mat-label>Subscriber Last Name</mat-label>
+            <input matInput [(ngModel)]="form.subscriber_last_name"
+                   name="sub_last">
+          </mat-form-field>
+          <mat-form-field><mat-label>Subscriber DOB</mat-label>
+            <input matInput type="date" [(ngModel)]="form.subscriber_dob"
+                   name="sub_dob">
+          </mat-form-field>
+        }
+        <mat-form-field><mat-label>PCP Copay ($)</mat-label>
+          <input matInput type="number" min="0" step="0.01"
+                 [(ngModel)]="form.copay_primary_care" name="copay_pcp">
+        </mat-form-field>
+        <mat-form-field><mat-label>Specialist Copay ($)</mat-label>
+          <input matInput type="number" min="0" step="0.01"
+                 [(ngModel)]="form.copay_specialist" name="copay_spec">
+        </mat-form-field>
+        <mat-form-field><mat-label>Effective Date</mat-label>
+          <input matInput type="date" [(ngModel)]="form.effective_date"
+                 name="eff">
+        </mat-form-field>
+        <mat-form-field><mat-label>Termination Date</mat-label>
+          <input matInput type="date" [(ngModel)]="form.termination_date"
+                 name="term">
+        </mat-form-field>
+        <div class="verified-row">
+          <mat-checkbox [(ngModel)]="form.is_verified" name="verified">
+            Eligibility verified
+          </mat-checkbox>
+          @if (form.is_verified) {
+            <mat-form-field><mat-label>Verification Date</mat-label>
+              <input matInput type="date" [(ngModel)]="form.verification_date"
+                     name="ver_date">
+            </mat-form-field>
+          }
+        </div>
+      </div>
+      <div class="form-actions">
+        <button mat-flat-button color="primary" type="submit">
+          {{ editing() ? 'Save Coverage' : 'Add Coverage' }}
+        </button>
+        @if (editing()) {
+          <button mat-button type="button" (click)="reset()">Cancel</button>
+        }
+      </div>
+    </form>
+  </mat-card-content>
+</mat-card>

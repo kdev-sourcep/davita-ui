@@ -1,0 +1,34 @@
+<div class="login-wrap">
+  <mat-card class="login-card">
+    <mat-card-header>
+      <mat-card-title>
+        <mat-icon>lock</mat-icon> Sign in to DAVITA
+      </mat-card-title>
+      <span class="card-hint">Demographics Database</span>
+    </mat-card-header>
+    <mat-card-content>
+      @if (error()) {
+        <div class="errors"><div>⚠ {{ error() }}</div></div>
+      }
+      <form (ngSubmit)="submit()">
+        <mat-form-field>
+          <mat-label>Username</mat-label>
+          <input matInput [(ngModel)]="username" name="username"
+                 autocomplete="username" required>
+        </mat-form-field>
+        <mat-form-field>
+          <mat-label>Password</mat-label>
+          <input matInput type="password" [(ngModel)]="password"
+                 name="password" autocomplete="current-password" required>
+        </mat-form-field>
+        <button mat-flat-button color="primary" type="submit"
+                [disabled]="busy()" class="login-btn">
+          {{ busy() ? 'Signing in…' : 'Sign in' }}
+        </button>
+      </form>
+      <div class="card-hint" style="margin-top: 12px">
+        Default dev account: admin / davita
+      </div>
+    </mat-card-content>
+  </mat-card>
+</div>

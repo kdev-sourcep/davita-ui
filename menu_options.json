@@ -1,0 +1,80 @@
+{
+  "race_options": [
+    { "label": "American Indian or Alaska Native", "code": "1002-5" },
+    { "label": "Asian", "code": "2028-9" },
+    { "label": "Black or African American", "code": "2054-5" },
+    { "label": "Middle Eastern or North African (MENA)", "code": "6000-1" },
+    { "label": "Native Hawaiian or Other Pacific Islander", "code": "2076-8" },
+    { "label": "White", "code": "2106-3" },
+    { "label": "Patient Declined to Specify", "code": "9999-D" },
+    { "label": "Unknown / Unable to Determine", "code": "9999-U" }
+  ],
+  "insurance_options": [
+    { "value": "medicare_original", "label": "Original Medicare (Part A/B)" },
+    { "value": "medicare_advantage", "label": "Medicare Advantage (Part C)" },
+    { "value": "employer_group", "label": "Employer Group Health Plan (EGHP / Commercial)" },
+    { "value": "medicaid", "label": "Medicaid / State Managed Care" },
+    { "value": "aetna", "label": "Aetna" },
+    { "value": "blue_cross_blue_shield", "label": "Blue Cross Blue Shield (BCBS)" },
+    { "value": "cigna", "label": "Cigna" },
+    { "value": "humana", "label": "Humana" },
+    { "value": "united_healthcare", "label": "UnitedHealthcare (UHC)" },
+    { "value": "cobra", "label": "COBRA Continuation Coverage" },
+    { "value": "va_tricare", "label": "VA / TRICARE / Indian Health Service" },
+    { "value": "self_pay", "label": "Uninsured / Self-Pay (Good Faith Estimate Required)" },
+    { "value": "other", "label": "Other / Not Listed" }
+  ],
+  "modality_options": [
+    "In-Center Hemodialysis", "Home Hemodialysis",
+    "Peritoneal Dialysis", "Nocturnal Hemodialysis",
+    "Acute / Inpatient Dialysis"
+  ],
+  "plan_type_options": [
+    "HMO", "PPO", "EPO", "POS", "HDHP",
+    "Medicare", "Medicaid", "Indemnity", "Self-Pay", "Other"
+  ],
+  "subscriber_relationship_options": [
+    "Self", "Spouse", "Child", "Parent", "Sibling",
+    "Domestic Partner", "Other"
+  ],
+  "ethnicity_options": [
+    { "label": "Hispanic or Latino", "code": "2135-2" },
+    { "label": "Not Hispanic or Latino", "code": "2186-5" },
+    { "label": "Patient Declined to Specify", "code": "9999-D" },
+    { "label": "Unknown", "code": "9999-U" }
+  ],
+  "primary_language_featured": [
+    { "label": "English", "code": "en" },
+    { "label": "Spanish", "code": "es" }
+  ],
+  "facility_type_options": [
+    "Dialysis Center (In-Center Hemodialysis)",
+    "Hospital-Based Dialysis Unit",
+    "Home Dialysis Program",
+    "Peritoneal Dialysis Center",
+    "Nocturnal Dialysis Program",
+    "Acute Care / Inpatient Dialysis",
+    "Skilled Nursing Facility (SNF) Dialysis",
+    "Pediatric Dialysis Center",
+    "Transplant Center",
+    "Vascular Access Center",
+    "Other"
+  ],
+  "primary_language_alphabetical": [
+    { "label": "Arabic", "code": "ar" },
+    { "label": "Bengali", "code": "bn" },
+    { "label": "Chinese (Mandarin)", "code": "zh" },
+    { "label": "French", "code": "fr" },
+    { "label": "German", "code": "de" },
+    { "label": "Hindi", "code": "hi" },
+    { "label": "Italian", "code": "it" },
+    { "label": "Japanese", "code": "ja" },
+    { "label": "Korean", "code": "ko" },
+    { "label": "Portuguese", "code": "pt" },
+    { "label": "Russian", "code": "ru" },
+    { "label": "Tagalog (Filipino)", "code": "tl" },
+    { "label": "Vietnamese", "code": "vi" },
+    { "label": "Sign Language (ASL)", "code": "ase" },
+    { "label": "Other Language", "code": "und" }
+  ]
+}

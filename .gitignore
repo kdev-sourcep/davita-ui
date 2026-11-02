@@ -1,0 +1,11 @@
+# deps / build output
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+# python
+__pycache__/
+*.pyc
+*.pyo
+# os / editor
+.DS_Store
+*.log

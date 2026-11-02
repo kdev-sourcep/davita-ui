@@ -1,0 +1,162 @@
+<div class="page">
+  <h1 class="page-title"><mat-icon>medical_services</mat-icon>Physicians</h1>
+
+  <mat-card>
+    <mat-card-header>
+      <mat-card-title>Physician Records</mat-card-title>
+      <mat-card-subtitle class="card-hint">
+        Use the Actions column to edit or delete a record
+      </mat-card-subtitle>
+    </mat-card-header>
+    <mat-card-content>
+      <div class="table-toolbar">
+        <mat-form-field class="search-box">
+          <mat-icon matPrefix>search</mat-icon>
+          <input matInput [ngModel]="query()"
+                 (ngModelChange)="query.set($event)"
+                 placeholder="Filter physicians…">
+        </mat-form-field>
+        <button mat-stroked-button (click)="exportCsv()"
+                [disabled]="!filtered().length">
+          <mat-icon>download</mat-icon> CSV
+        </button>
+        <span class="spacer"></span>
+        @if (auth.canWrite()) {
+          <button mat-flat-button color="primary" (click)="reset()">
+            <mat-icon>person_add</mat-icon> Add Physician
+          </button>
+        }
+      </div>
+      @if (filtered().length) {
+        <table mat-table matSort (matSortChange)="onSort($event)"
+               [dataSource]="paged()" class="grid">
+          <ng-container matColumnDef="id">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>ID</th>
+            <td mat-cell *matCellDef="let r">{{ r.id }}</td>
+          </ng-container>
+          <ng-container matColumnDef="name">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Name</th>
+            <td mat-cell *matCellDef="let r">{{ r.last_name }}, {{ r.first_name }}</td>
+          </ng-container>
+          <ng-container matColumnDef="npi">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>NPI</th>
+            <td mat-cell *matCellDef="let r">{{ r.npi || '—' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="specialty">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Specialty</th>
+            <td mat-cell *matCellDef="let r">{{ r.specialty || '—' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="phone">
+            <th mat-header-cell *matHeaderCellDef>Phone</th>
+            <td mat-cell *matCellDef="let r">{{ r.phone || '—' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="email">
+            <th mat-header-cell *matHeaderCellDef>Email</th>
+            <td mat-cell *matCellDef="let r">{{ r.email || '—' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="actions">
+            <th mat-header-cell *matHeaderCellDef>Actions</th>
+            <td mat-cell *matCellDef="let r">
+              @if (auth.canWrite()) {
+                <button mat-icon-button color="primary"
+                        (click)="select(r); $event.stopPropagation()"
+                        title="Edit">
+                  <mat-icon>edit</mat-icon>
+                </button>
+              }
+              @if (auth.canDelete()) {
+                <button mat-icon-button color="warn" (click)="remove(r, $event)"
+                        title="Delete">
+                  <mat-icon>delete</mat-icon>
+                </button>
+              }
+            </td>
+          </ng-container>
+          <tr mat-header-row *matHeaderRowDef="cols"></tr>
+          <tr mat-row *matRowDef="let row; columns: cols"
+              (click)="auth.canWrite() && select(row)"
+              [class.selected]="editing()?.id === row.id"></tr>
+        </table>
+        <mat-paginator [length]="filtered().length" [pageSize]="pageSize()"
+                       [pageSizeOptions]="[10, 25, 50]"
+                       (page)="onPage($event)" />
+      } @else {
+        <div class="empty-state">No physicians yet — use the form below to add one.</div>
+      }
+    </mat-card-content>
+  </mat-card>
+
+  @if (auth.canWrite()) {
+  <mat-card id="edit-form">
+    <mat-card-header>
+      <mat-card-title>
+        {{ editing() ? 'Edit Physician #' + editing()!.id : 'Add Physician' }}
+      </mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      @if (errors().length) {
+        <div class="errors">
+          @for (e of errors(); track e) { <div>⚠ {{ e }}</div> }
+        </div>
+      }
+      <form (ngSubmit)="save()">
+        <div class="form-grid">
+          <mat-form-field><mat-label>First Name *</mat-label>
+            <input matInput [(ngModel)]="form.first_name" name="first_name" required>
+          </mat-form-field>
+          <mat-form-field><mat-label>Last Name *</mat-label>
+            <input matInput [(ngModel)]="form.last_name" name="last_name" required>
+          </mat-form-field>
+          <mat-form-field><mat-label>NPI</mat-label>
+            <input matInput [(ngModel)]="form.npi" name="npi"
+                   placeholder="10 digits">
+          </mat-form-field>
+          <mat-form-field><mat-label>Specialty</mat-label>
+            <mat-select [(ngModel)]="form.specialty" name="specialty">
+              @for (s of specialties; track s) {
+                <mat-option [value]="s">{{ s || '—' }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+          <mat-form-field><mat-label>License Number</mat-label>
+            <input matInput [(ngModel)]="form.license_number" name="lic">
+          </mat-form-field>
+          <mat-form-field><mat-label>Phone</mat-label>
+            <input matInput [(ngModel)]="form.phone" name="phone">
+          </mat-form-field>
+          <mat-form-field><mat-label>Email</mat-label>
+            <input matInput [(ngModel)]="form.email" name="email">
+          </mat-form-field>
+          <mat-form-field class="span2"><mat-label>Address Line 1</mat-label>
+            <input matInput [(ngModel)]="form.address_line1" name="a1">
+          </mat-form-field>
+          <mat-form-field class="span2"><mat-label>Address Line 2</mat-label>
+            <input matInput [(ngModel)]="form.address_line2" name="a2">
+          </mat-form-field>
+          <mat-form-field><mat-label>City</mat-label>
+            <input matInput [(ngModel)]="form.city" name="city">
+          </mat-form-field>
+          <mat-form-field><mat-label>State</mat-label>
+            <mat-select [(ngModel)]="form.state" name="state">
+              @for (s of states; track s) {
+                <mat-option [value]="s">{{ s || '—' }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+          <mat-form-field><mat-label>ZIP</mat-label>
+            <input matInput [(ngModel)]="form.zip" name="zip">
+          </mat-form-field>
+        </div>
+        <div class="form-actions">
+          <button mat-flat-button color="primary" type="submit">
+            {{ editing() ? 'Save Changes' : 'Create Physician' }}
+          </button>
+          @if (editing()) {
+            <button mat-button type="button" (click)="reset()">Cancel</button>
+          }
+        </div>
+      </form>
+    </mat-card-content>
+  </mat-card>
+  }
+</div>

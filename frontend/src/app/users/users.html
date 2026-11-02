@@ -1,0 +1,119 @@
+<div class="page">
+  <h1 class="page-title"><mat-icon>admin_panel_settings</mat-icon>Users</h1>
+
+  <mat-card>
+    <mat-card-header>
+      <mat-card-title>Application Users</mat-card-title>
+      <mat-card-subtitle class="card-hint">
+        viewer — read-only · registrar — create &amp; update · admin — full access
+      </mat-card-subtitle>
+    </mat-card-header>
+    <mat-card-content>
+      <div class="table-toolbar">
+        <span class="spacer"></span>
+        <button mat-flat-button color="primary" (click)="reset()">
+          <mat-icon>person_add</mat-icon> Add User
+        </button>
+      </div>
+      @if (rows().length) {
+        <table mat-table [dataSource]="rows()" class="grid">
+          <ng-container matColumnDef="id">
+            <th mat-header-cell *matHeaderCellDef>ID</th>
+            <td mat-cell *matCellDef="let r">{{ r.id }}</td>
+          </ng-container>
+          <ng-container matColumnDef="username">
+            <th mat-header-cell *matHeaderCellDef>Username</th>
+            <td mat-cell *matCellDef="let r">
+              {{ r.username }}
+              @if (r.id === auth.user()?.id) {
+                <span class="pill pill-1">you</span>
+              }
+            </td>
+          </ng-container>
+          <ng-container matColumnDef="role">
+            <th mat-header-cell *matHeaderCellDef>Role</th>
+            <td mat-cell *matCellDef="let r">
+              <span class="pill role-{{ r.role }}">{{ r.role }}</span>
+            </td>
+          </ng-container>
+          <ng-container matColumnDef="created">
+            <th mat-header-cell *matHeaderCellDef>Created</th>
+            <td mat-cell *matCellDef="let r">{{ r.created_at || '—' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="actions">
+            <th mat-header-cell *matHeaderCellDef>Actions</th>
+            <td mat-cell *matCellDef="let r">
+              <button mat-icon-button color="primary"
+                      (click)="select(r); $event.stopPropagation()"
+                      title="Edit">
+                <mat-icon>edit</mat-icon>
+              </button>
+              @if (r.id !== auth.user()?.id) {
+                <button mat-icon-button color="warn"
+                        (click)="remove(r, $event)" title="Delete">
+                  <mat-icon>delete</mat-icon>
+                </button>
+              }
+            </td>
+          </ng-container>
+          <tr mat-header-row *matHeaderRowDef="cols"></tr>
+          <tr mat-row *matRowDef="let row; columns: cols"
+              (click)="select(row)"
+              [class.selected]="editing()?.id === row.id"></tr>
+        </table>
+      } @else {
+        <div class="empty-state">No users found.</div>
+      }
+    </mat-card-content>
+  </mat-card>
+
+  <mat-card id="edit-form">
+    <mat-card-header>
+      <mat-card-title>
+        {{ editing() ? 'Edit User ' + editing()!.username : 'Add User' }}
+      </mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      @if (errors().length) {
+        <div class="errors">
+          @for (e of errors(); track e) { <div>⚠ {{ e }}</div> }
+        </div>
+      }
+      <form (ngSubmit)="save()">
+        <div class="form-grid">
+          <mat-form-field><mat-label>Username *</mat-label>
+            <input matInput [(ngModel)]="form.username" name="username"
+                   required [disabled]="!!editing()">
+            <mat-hint>3–40 chars: letters, digits, _ . -</mat-hint>
+          </mat-form-field>
+          <mat-form-field><mat-label>Role *</mat-label>
+            <mat-select [(ngModel)]="form.role" name="role" required>
+              @for (r of roles; track r) {
+                <mat-option [value]="r">{{ r }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+          <mat-form-field><mat-label>
+            {{ editing() ? 'New Password' : 'Password *' }}
+          </mat-label>
+            <input matInput type="password" [(ngModel)]="form.password"
+                   name="password" [required]="!editing()"
+                   autocomplete="new-password">
+            <mat-hint>
+              {{ editing() ? 'Leave blank to keep current password'
+                           : 'At least 6 characters' }}
+            </mat-hint>
+          </mat-form-field>
+        </div>
+        <div class="form-actions">
+          <button mat-flat-button color="primary" type="submit">
+            {{ editing() ? 'Save User' : 'Create User' }}
+          </button>
+          @if (editing()) {
+            <button mat-button type="button" (click)="reset()">Cancel</button>
+          }
+        </div>
+      </form>
+    </mat-card-content>
+  </mat-card>
+</div>

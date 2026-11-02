@@ -1,0 +1,60 @@
+<div class="page">
+  <h1 class="page-title"><mat-icon>hub</mat-icon>Relationship Map</h1>
+
+  <mat-card>
+    <mat-card-header>
+      <mat-card-title>Patient ↔ Physician ↔ Facility</mat-card-title>
+      <mat-card-subtitle class="card-hint">
+        Drag nodes to rearrange · scroll to zoom · hover for details ·
+        click a node for its connections
+      </mat-card-subtitle>
+    </mat-card-header>
+    <mat-card-content>
+      <div class="map-wrap">
+        <div id="graph"></div>
+        <div id="graph-tip" class="map-tip"></div>
+      </div>
+      <div class="map-legend">
+        <span><i class="sw" style="background:#2a9d8f"></i> Patient</span>
+        <span><i class="sw" style="background:#1565c0"></i> Physician</span>
+        <span><i class="sw" style="background:#6a1b9a"></i> Facility</span>
+        <span class="card-hint">
+          {{ links().length }} relationships between {{ nodes().length }} entities
+        </span>
+      </div>
+      @if (!nodes().length) {
+        <div class="empty-state">
+          No relationships yet — assign patients to physicians and facilities.
+        </div>
+      }
+    </mat-card-content>
+  </mat-card>
+
+  @if (selected(); as n) {
+    <mat-card>
+      <mat-card-header>
+        <mat-card-title>
+          <mat-icon>{{ kindIcon(n.kind) }}</mat-icon> {{ n.label }}
+        </mat-card-title>
+        <mat-card-subtitle class="card-hint">
+          {{ n.kind }}{{ n.sub ? ' · ' + n.sub : '' }}
+        </mat-card-subtitle>
+      </mat-card-header>
+      <mat-card-content>
+        <ul class="conn-list">
+          @for (cnx of n.connections; track $index) {
+            <li>
+              <span class="pill"
+                    [style.background]="kindColor(cnx.kind) + '22'"
+                    [style.color]="kindColor(cnx.kind)">
+                {{ cnx.kind }}
+              </span>
+              {{ cnx.type }} <b>{{ cnx.label }}</b>
+            </li>
+          }
+        </ul>
+        <button mat-button (click)="selected.set(null)">Close</button>
+      </mat-card-content>
+    </mat-card>
+  }
+</div>

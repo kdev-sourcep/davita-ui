@@ -1,0 +1,73 @@
+<div class="page">
+  <section class="hero">
+    <div class="hero-text">
+      <h1>Welcome to DAVITA</h1>
+      <p>Demographics &amp; coverage registry — {{ today | date: 'fullDate' }}</p>
+    </div>
+    <div class="hero-actions">
+      @if (auth.canWrite()) {
+        <a mat-flat-button routerLink="/patients">
+          <mat-icon>person_add</mat-icon> Register Patient
+        </a>
+      }
+    </div>
+  </section>
+
+  <div class="stat-cards">
+    <mat-card class="stat" routerLink="/patients">
+      <div class="stat-icon patients"><mat-icon>people</mat-icon></div>
+      <div class="stat-body">
+        <div class="stat-num">{{ summary()?.patients ?? '—' }}</div>
+        <div class="stat-label">Patients</div>
+      </div>
+      <mat-icon class="stat-arrow">arrow_forward</mat-icon>
+    </mat-card>
+
+    <mat-card class="stat" routerLink="/physicians">
+      <div class="stat-icon physicians"><mat-icon>medical_services</mat-icon></div>
+      <div class="stat-body">
+        <div class="stat-num">{{ summary()?.physicians ?? '—' }}</div>
+        <div class="stat-label">Physicians</div>
+      </div>
+      <mat-icon class="stat-arrow">arrow_forward</mat-icon>
+    </mat-card>
+
+    <mat-card class="stat" routerLink="/facilities">
+      <div class="stat-icon facilities"><mat-icon>domain</mat-icon></div>
+      <div class="stat-body">
+        <div class="stat-num">{{ summary()?.facilities ?? '—' }}</div>
+        <div class="stat-label">Facilities</div>
+      </div>
+      <mat-icon class="stat-arrow">arrow_forward</mat-icon>
+    </mat-card>
+
+    <mat-card class="stat" routerLink="/insurance">
+      <div class="stat-icon coverage"><mat-icon>health_and_safety</mat-icon></div>
+      <div class="stat-body">
+        <div class="stat-num">{{ summary()?.coverages ?? '—' }}</div>
+        <div class="stat-label">Coverage Records</div>
+      </div>
+      <mat-icon class="stat-arrow">arrow_forward</mat-icon>
+    </mat-card>
+  </div>
+
+  <mat-card class="recent">
+    <mat-card-header>
+      <mat-card-title>Recently Added Patients</mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      @for (p of summary()?.recent_patients ?? []; track p.id) {
+        <div class="recent-row">
+          <span class="avatar">{{ p.first_name[0] }}{{ p.last_name[0] }}</span>
+          <span class="recent-name">{{ p.last_name }}, {{ p.first_name }}</span>
+          <span class="recent-date">{{ p.created_at | date: 'medium' }}</span>
+        </div>
+      } @empty {
+        <div class="empty-state">
+          <mat-icon class="empty-icon">group_add</mat-icon>
+          <div>No patients yet — register one from the Patients page.</div>
+        </div>
+      }
+    </mat-card-content>
+  </mat-card>
+</div>

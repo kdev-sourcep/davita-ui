@@ -1,0 +1,104 @@
+<mat-card class="insurance-card">
+  <mat-card-header>
+    <mat-card-title>Dialysis Treatments</mat-card-title>
+    <span class="card-hint">Dialysis sessions for this patient</span>
+  </mat-card-header>
+  <mat-card-content>
+    @if (sorted().length) {
+      <table mat-table [dataSource]="sorted()" class="grid compact">
+        <ng-container matColumnDef="date">
+          <th mat-header-cell *matHeaderCellDef>Date</th>
+          <td mat-cell *matCellDef="let r">{{ r.treatment_date }}</td>
+        </ng-container>
+        <ng-container matColumnDef="modality">
+          <th mat-header-cell *matHeaderCellDef>Modality</th>
+          <td mat-cell *matCellDef="let r">{{ r.modality || '—' }}</td>
+        </ng-container>
+        <ng-container matColumnDef="facility">
+          <th mat-header-cell *matHeaderCellDef>Facility</th>
+          <td mat-cell *matCellDef="let r">{{ r.facility_name || '—' }}</td>
+        </ng-container>
+        <ng-container matColumnDef="duration">
+          <th mat-header-cell *matHeaderCellDef>Duration</th>
+          <td mat-cell *matCellDef="let r">
+            {{ r.duration_minutes != null ? r.duration_minutes + ' min' : '—' }}
+          </td>
+        </ng-container>
+        <ng-container matColumnDef="actions">
+          <th mat-header-cell *matHeaderCellDef>Actions</th>
+          <td mat-cell *matCellDef="let r">
+            <button mat-icon-button color="primary"
+                    (click)="select(r); $event.stopPropagation()"
+                    title="Edit">
+              <mat-icon>edit</mat-icon>
+            </button>
+            @if (auth.canDelete()) {
+              <button mat-icon-button color="warn" (click)="remove(r, $event)"
+                      title="Delete">
+                <mat-icon>delete</mat-icon>
+              </button>
+            }
+          </td>
+        </ng-container>
+        <tr mat-header-row *matHeaderRowDef="cols"></tr>
+        <tr mat-row *matRowDef="let row; columns: cols"></tr>
+      </table>
+    } @else {
+      <div class="empty-state">No treatments recorded yet.</div>
+    }
+
+    <div class="divider"></div>
+
+    <h4 id="treatment-form">
+      {{ editing() ? 'Edit Treatment #' + editing()!.id : 'Log Treatment' }}
+    </h4>
+    @if (errors().length) {
+      <div class="errors">
+        @for (e of errors(); track e) { <div>⚠ {{ e }}</div> }
+      </div>
+    }
+    <form (ngSubmit)="save()">
+      <div class="form-grid">
+        <mat-form-field><mat-label>Treatment Date *</mat-label>
+          <input matInput type="date" [(ngModel)]="form.treatment_date"
+                 name="tdate" required>
+        </mat-form-field>
+        <mat-form-field><mat-label>Modality</mat-label>
+          <mat-select [(ngModel)]="form.modality" name="modality">
+            <mat-option value="">—</mat-option>
+            @for (m of modalities(); track m) {
+              <mat-option [value]="m">{{ m }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+        <mat-form-field class="span2"><mat-label>Facility *</mat-label>
+          <mat-select [(ngModel)]="form.facility_id" name="facility" required>
+            <mat-option [value]="null">—</mat-option>
+            @for (f of facilities(); track f.id) {
+              <mat-option [value]="f.id">
+                {{ f.facility_name }} — {{ f.city }}, {{ f.state }}
+              </mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+        <mat-form-field><mat-label>Duration (minutes)</mat-label>
+          <input matInput type="number" min="1" max="600"
+                 [(ngModel)]="form.duration_minutes" name="duration">
+          <mat-hint>Typical HD session ≈ 240 min</mat-hint>
+        </mat-form-field>
+        <mat-form-field class="span2"><mat-label>Notes</mat-label>
+          <input matInput [(ngModel)]="form.notes" name="notes"
+                 maxlength="500">
+        </mat-form-field>
+      </div>
+      <div class="actions">
+        <button mat-flat-button color="primary" type="submit">
+          {{ editing() ? 'Update' : 'Log Treatment' }}
+        </button>
+        @if (editing()) {
+          <button mat-button type="button" (click)="reset()">Cancel</button>
+        }
+      </div>
+    </form>
+  </mat-card-content>
+</mat-card>
