@@ -147,6 +147,53 @@ CREATE TABLE IF NOT EXISTS treatments (
 CREATE INDEX IF NOT EXISTS idx_treatments_patient ON treatments(patient_id);
 CREATE INDEX IF NOT EXISTS idx_treatments_facility ON treatments(facility_id);
 
+-- Product catalog: medications, dialyzers, supplies (HCPCS-style billing).
+CREATE TABLE IF NOT EXISTS products (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    sku              TEXT NOT NULL UNIQUE,
+    product_name     TEXT NOT NULL,
+    category         TEXT NOT NULL,          -- Medication | Dialysis Supply | Equipment | Consumable
+    unit_of_measure  TEXT NOT NULL,          -- unit, vial, set, box, mL, ...
+    unit_cost        REAL NOT NULL,
+    billable_code    TEXT,                   -- HCPCS code for claims, e.g. J0885
+    is_active        INTEGER NOT NULL DEFAULT 1,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at       TEXT
+);
+
+-- Billable clinical encounter: patient + physician at a facility,
+-- optionally linked to a coverage record for claim routing.
+CREATE TABLE IF NOT EXISTS encounters (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id       INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    physician_id     INTEGER NOT NULL REFERENCES physicians(id),
+    facility_id      INTEGER NOT NULL REFERENCES facilities(id),
+    coverage_id      INTEGER REFERENCES patient_insurance(id) ON DELETE SET NULL,
+    encounter_date   TEXT NOT NULL,          -- datetime of service
+    encounter_type   TEXT NOT NULL,
+    status           TEXT NOT NULL DEFAULT 'Scheduled'
+                     CHECK (status IN ('Scheduled', 'In Progress',
+                                       'Completed', 'Billed')),
+    clinical_notes   TEXT,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at       TEXT
+);
+
+-- Charge lines on an encounter — price is captured at time of service.
+CREATE TABLE IF NOT EXISTS encounter_products (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    encounter_id      INTEGER NOT NULL REFERENCES encounters(id) ON DELETE CASCADE,
+    product_id        INTEGER NOT NULL REFERENCES products(id),
+    quantity          REAL NOT NULL,
+    lot_number        TEXT,
+    unit_price_at_time REAL NOT NULL,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at        TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_encounters_patient ON encounters(patient_id);
+CREATE INDEX IF NOT EXISTS idx_encounter_products ON encounter_products(encounter_id);
+
 CREATE INDEX IF NOT EXISTS idx_insurance_patient ON patient_insurance(patient_id);
 CREATE INDEX IF NOT EXISTS idx_insurance_policy  ON patient_insurance(policy_id);
 CREATE INDEX IF NOT EXISTS idx_policies_insurer  ON insurance_policies(insurer_id);

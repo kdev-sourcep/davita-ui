@@ -43,6 +43,36 @@ def seed_insurers(conn: sqlite3.Connection) -> None:
             "VALUES (?, ?)", (o["label"], o["value"]))
 
 
+SEED_PRODUCTS = [
+    ("DIA-HF-180", "Optiflux F180NR High-Flux Dialyzer", "Dialysis Supply",
+     "unit", 42.50, "A4657"),
+    ("MED-EPO-4K", "Epoetin Alfa (Epogen) 4,000 Units/mL", "Medication",
+     "vial", 58.00, "J0885"),
+    ("MED-HEP-1K", "Heparin Sodium 1,000 USP Units/mL", "Medication",
+     "vial", 6.75, "J1644"),
+    ("SUP-BLD-01", "CombiSet Bloodline Tubing Set", "Consumable",
+     "set", 18.20, "A4653"),
+    ("DIA-PD-15L", "Dianeal PD-2 1.5% Dextrose 2L Bag", "Dialysis Supply",
+     "bag", 12.40, None),
+    ("MED-VIT-D", "Calcitriol 1 mcg Capsule", "Medication",
+     "tablet", 3.15, None),
+    ("EQP-BP-100", "Digital Blood Pressure Monitor", "Equipment",
+     "unit", 89.99, None),
+    ("SUP-NED-15", "Fistula Needle 15G (Box of 50)", "Consumable",
+     "box", 67.00, "A4651"),
+]
+
+
+def seed_products(conn: sqlite3.Connection) -> None:
+    """Dialysis product catalog seed — skipped once products exist."""
+    for sku, name, cat, uom, cost, code in SEED_PRODUCTS:
+        conn.execute(
+            "INSERT OR IGNORE INTO products (sku, product_name, category, "
+            "unit_of_measure, unit_cost, billable_code) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (sku, name, cat, uom, cost, code))
+
+
 def seed_users(conn: sqlite3.Connection) -> None:
     """Bootstrap a default admin when the user table is empty.
 
@@ -116,6 +146,7 @@ def init_db() -> None:
                         f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
         seed_insurers(conn)
         seed_users(conn)
+        seed_products(conn)
         if needs_migration:
             migrate_insurance_rows(conn)
         conn.commit()

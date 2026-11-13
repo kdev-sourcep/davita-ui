@@ -364,6 +364,18 @@ ENTITIES = {
         "linked_to": "insurance policy",
         "unique_msg": "payer_name already exists — must be unique",
     },
+    "products": {
+        "table": "products",
+        "label": "Product",
+        "required": ["sku", "product_name", "category",
+                     "unit_of_measure", "unit_cost"],
+        "fields": ["sku", "product_name", "category", "unit_of_measure",
+                   "unit_cost", "billable_code", "is_active"],
+        "list_sql": "SELECT * FROM products ORDER BY category, product_name",
+        "linked_msg": "product",
+        "linked_to": "encounter line",
+        "unique_msg": "sku already exists — must be unique",
+    },
     "treatments": {
         "table": "treatments",
         "label": "Treatment",
@@ -407,6 +419,14 @@ def clean_payload(cfg: dict, data: dict):
             except (TypeError, ValueError):
                 errors.append(
                     f"{field} must be a non-negative integer")
+                continue
+        if field in ("unit_cost",) and v is not None:
+            try:
+                v = float(v)
+                if v < 0:
+                    raise ValueError
+            except (TypeError, ValueError):
+                errors.append(f"{field} must be a non-negative number")
                 continue
         values[field] = v
 
@@ -810,6 +830,12 @@ def collection(entity):
         if values.get("modality") and mods \
                 and values["modality"] not in mods:
             errors.append(f"modality must be one of {sorted(mods)}")
+    if entity == "products":
+        cats = set(MENU_OPTIONS.get("product_category_options", []))
+        if cats and values.get("category") not in cats:
+            errors.append(f"category must be one of {sorted(cats)}")
+        a = values.get("is_active")
+        values["is_active"] = 1 if a in (None, True, 1, "1", "true") else 0
     if errors:
         return jsonify({"errors": errors}), 400
 
@@ -894,6 +920,12 @@ def record(entity, rec_id):
         if values.get("modality") and mods \
                 and values["modality"] not in mods:
             errors.append(f"modality must be one of {sorted(mods)}")
+    if entity == "products":
+        cats = set(MENU_OPTIONS.get("product_category_options", []))
+        if cats and values.get("category") not in cats:
+            errors.append(f"category must be one of {sorted(cats)}")
+        a = values.get("is_active")
+        values["is_active"] = 1 if a in (None, True, 1, "1", "true") else 0
     if cfg["table"] == "patients":
         if values.get("mrn") is None:
             values["mrn"] = existing["mrn"]  # preserve assigned MRN
@@ -904,6 +936,11 @@ def record(entity, rec_id):
     try:
         save(cfg, values, rec_id)
         conn().commit()
+    except sqlite3.IntegrityError:
+        conn().rollback()
+        return jsonify({"errors": [cfg.get(
+            "unique_msg", "a record with these unique fields already "
+            "exists")]}), 409
     except sqlite3.Error as e:
         conn().rollback()
         return jsonify({"errors": [f"database error: {e}"]}), 500
@@ -1038,6 +1075,269 @@ def insurance_record(pid, iid):
         conn().rollback()
         return jsonify({"errors": [f"database error: {e}"]}), 500
     return jsonify(coverage_row(iid))
+
+
+# ------------------- encounters (clinical + charge capture) -------------------
+ENCOUNTER_SELECT = """
+    SELECT e.*,
+           (p.last_name  || ', ' || p.first_name)  AS patient_name,
+           p.mrn,
+           (ph.last_name || ', ' || ph.first_name) AS physician_name,
+           f.facility_name,
+           ins.payer_name
+    FROM encounters e
+    JOIN patients p       ON p.id  = e.patient_id
+    JOIN physicians ph    ON ph.id = e.physician_id
+    JOIN facilities f     ON f.id  = e.facility_id
+    LEFT JOIN patient_insurance pi ON pi.id = e.coverage_id
+    LEFT JOIN insurance_policies ip ON ip.id = pi.policy_id
+    LEFT JOIN insurers ins        ON ins.id = ip.insurer_id
+"""
+
+ENCOUNTER_DATE_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?$")
+
+
+def _encounter_lines(encounter_ids):
+    """{encounter_id: [product lines]} joined to product name/SKU."""
+    if not encounter_ids:
+        return {}
+    marks = ",".join("?" for _ in encounter_ids)
+    rows = conn().execute(
+        "SELECT ep.id, ep.encounter_id, ep.product_id, ep.quantity, "
+        "       ep.lot_number, ep.unit_price_at_time, "
+        "       pr.product_name, pr.sku, pr.billable_code "
+        "FROM encounter_products ep "
+        "JOIN products pr ON pr.id = ep.product_id "
+        f"WHERE ep.encounter_id IN ({marks}) "
+        "ORDER BY ep.id", encounter_ids).fetchall()
+    out = {eid: [] for eid in encounter_ids}
+    for r in rows:
+        out[r["encounter_id"]].append(dict(r))
+    return out
+
+
+def clean_encounter(data):
+    """Validate an encounter payload -> (header, lines, errors)."""
+    errors, v = [], {}
+    for fk, table, label in (
+            ("patient_id", "patients", "patient"),
+            ("physician_id", "physicians", "physician"),
+            ("facility_id", "facilities", "facility"),
+            ("coverage_id", "patient_insurance", "coverage")):
+        raw = data.get(fk)
+        v[fk] = None if raw in (None, "") else raw
+        if v[fk] is None:
+            if fk != "coverage_id":
+                errors.append(f"{fk} is required")
+            continue
+        try:
+            v[fk] = int(v[fk])
+        except (TypeError, ValueError):
+            errors.append(f"{fk} must be an integer")
+            continue
+        if not conn().execute(
+                f"SELECT 1 FROM {table} WHERE id = ?", (v[fk],)).fetchone():
+            errors.append(f"linked {label} (id {v[fk]}) does not exist")
+
+    v["encounter_date"] = (data.get("encounter_date") or "").strip() or None
+    if not v["encounter_date"]:
+        errors.append("encounter_date is required")
+    elif not ENCOUNTER_DATE_RE.match(v["encounter_date"]):
+        errors.append("encounter_date: use YYYY-MM-DD[ HH:MM]")
+
+    types = set(MENU_OPTIONS.get("encounter_type_options", []))
+    v["encounter_type"] = (data.get("encounter_type") or "").strip() or None
+    if not v["encounter_type"]:
+        errors.append("encounter_type is required")
+    elif types and v["encounter_type"] not in types:
+        errors.append(f"encounter_type must be one of {sorted(types)}")
+
+    statuses = set(MENU_OPTIONS.get("encounter_status_options", []))
+    v["status"] = (data.get("status") or "Scheduled").strip()
+    if statuses and v["status"] not in statuses:
+        errors.append(f"status must be one of {sorted(statuses)}")
+
+    notes = data.get("clinical_notes")
+    v["clinical_notes"] = notes.strip() if isinstance(notes, str) else None
+
+    lines = []
+    for i, item in enumerate(data.get("products") or []):
+        pid, err = _encounter_line(i, item)
+        if err:
+            errors.extend(err)
+        else:
+            lines.append(pid)
+    return v, lines, errors
+
+
+def _encounter_line(idx, item):
+    errors = []
+    pid = item.get("product_id")
+    if pid in (None, ""):
+        errors.append(f"products[{idx}].product_id is required")
+    else:
+        try:
+            pid = int(pid)
+            prod = conn().execute(
+                "SELECT is_active FROM products WHERE id = ?",
+                (pid,)).fetchone()
+            if prod is None:
+                errors.append(f"products[{idx}]: product {pid} does not exist")
+            elif not prod["is_active"]:
+                errors.append(f"products[{idx}]: product {pid} is inactive")
+        except (TypeError, ValueError):
+            errors.append(f"products[{idx}].product_id must be an integer")
+            pid = None
+    try:
+        qty = float(item.get("quantity"))
+        if qty <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        errors.append(f"products[{idx}].quantity must be a positive number")
+        qty = None
+    try:
+        price = float(item.get("unit_price_at_time"))
+        if price < 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        errors.append(
+            f"products[{idx}].unit_price_at_time must be a non-negative number")
+        price = None
+    lot = item.get("lot_number")
+    lot = lot.strip() if isinstance(lot, str) else None
+    if errors:
+        return None, errors
+    return {"product_id": pid, "quantity": qty, "lot_number": lot,
+            "unit_price_at_time": price}, None
+
+
+def encounter_view(row, with_lines=True):
+    d = dict(row)
+    if with_lines:
+        d["products"] = _encounter_lines([d["id"]])[d["id"]]
+    return d
+
+
+def insert_encounter(v, lines):
+    cols = ", ".join(v)
+    marks = ", ".join(f":{k}" for k in v)
+    eid = conn().execute(
+        f"INSERT INTO encounters ({cols}, updated_at) "
+        f"VALUES ({marks}, datetime('now'))", v).lastrowid
+    for ln in lines:
+        conn().execute(
+            "INSERT INTO encounter_products (encounter_id, product_id, "
+            "quantity, lot_number, unit_price_at_time) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (eid, ln["product_id"], ln["quantity"], ln["lot_number"],
+             ln["unit_price_at_time"]))
+    return eid
+
+
+@app.route("/api/encounters", methods=["GET", "POST", "OPTIONS"])
+def encounters_collection():
+    if request.method == "OPTIONS":
+        return "", 204
+    err = auth_error("registrar" if request.method == "POST" else "viewer")
+    if err is not None:
+        return err
+
+    if request.method == "GET":
+        rows = conn().execute(
+            ENCOUNTER_SELECT +
+            " ORDER BY e.encounter_date DESC, e.id DESC").fetchall()
+        return jsonify([encounter_view(r) for r in rows])
+
+    data = request.get_json(silent=True) or {}
+    v, lines, errors = clean_encounter(data)
+    if errors:
+        return jsonify({"errors": errors}), 400
+    try:
+        eid = insert_encounter(v, lines)
+        conn().commit()  # header + lines commit atomically
+    except sqlite3.Error as e:
+        conn().rollback()
+        return jsonify({"errors": [f"database error: {e}"]}), 500
+    row = conn().execute(ENCOUNTER_SELECT + " WHERE e.id = ?",
+                         (eid,)).fetchone()
+    return jsonify(encounter_view(row)), 201
+
+
+@app.route("/api/encounters/<int:eid>",
+           methods=["GET", "PUT", "DELETE", "OPTIONS"])
+def encounter_record(eid):
+    if request.method == "OPTIONS":
+        return "", 204
+    err = auth_error({"GET": "viewer", "PUT": "registrar"}
+                     .get(request.method, "admin"))
+    if err is not None:
+        return err
+
+    row = conn().execute(
+        ENCOUNTER_SELECT + " WHERE e.id = ?", (eid,)).fetchone()
+    if row is None:
+        return jsonify({"errors": [f"Encounter {eid} not found"]}), 404
+
+    if request.method == "GET":
+        return jsonify(encounter_view(row))
+
+    if request.method == "DELETE":
+        conn().execute("DELETE FROM encounters WHERE id = ?", (eid,))
+        conn().commit()  # lines cascade
+        return jsonify({"deleted": True, "id": eid})
+
+    data = request.get_json(silent=True) or {}
+    # PUT: 'products' optional — omit to keep existing lines, pass to replace
+    replace_lines = "products" in data
+    if not replace_lines:
+        data = {**data, "products": []}
+        v, _lines, errors = clean_encounter(data)
+    else:
+        v, lines, errors = clean_encounter(data)
+    if errors:
+        return jsonify({"errors": errors}), 400
+    try:
+        conn().execute(
+            "UPDATE encounters SET " +
+            ", ".join(f"{k} = :{k}" for k in v) +
+            ", updated_at = datetime('now') WHERE id = :eid",
+            {**v, "eid": eid})
+        if replace_lines:
+            conn().execute(
+                "DELETE FROM encounter_products WHERE encounter_id = ?",
+                (eid,))
+            for ln in lines:
+                conn().execute(
+                    "INSERT INTO encounter_products (encounter_id, "
+                    "product_id, quantity, lot_number, unit_price_at_time) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (eid, ln["product_id"], ln["quantity"], ln["lot_number"],
+                     ln["unit_price_at_time"]))
+        conn().commit()
+    except sqlite3.Error as e:
+        conn().rollback()
+        return jsonify({"errors": [f"database error: {e}"]}), 500
+    row = conn().execute(ENCOUNTER_SELECT + " WHERE e.id = ?",
+                         (eid,)).fetchone()
+    return jsonify(encounter_view(row))
+
+
+@app.get("/api/patients/<int:pid>/encounters")
+@require_role("viewer")
+def patient_encounters(pid):
+    if row_or_none("patients", pid) is None:
+        return jsonify({"errors": [f"Patient {pid} not found"]}), 404
+    rows = conn().execute(
+        ENCOUNTER_SELECT + " WHERE e.patient_id = ? "
+        "ORDER BY e.encounter_date DESC, e.id DESC", (pid,)).fetchall()
+    lines = _encounter_lines([r["id"] for r in rows])
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["products"] = lines[r["id"]]
+        out.append(d)
+    return jsonify(out)
 
 
 if __name__ == "__main__":

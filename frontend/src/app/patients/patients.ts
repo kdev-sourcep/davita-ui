@@ -15,6 +15,7 @@ import { ApiService } from '../api.service';
 import { AuthService } from '../auth.service';
 import { PatientInsurance } from '../insurance/insurance';
 import { PatientTreatments } from '../treatments/treatments';
+import { PatientEncounters } from '../encounters/encounters';
 import { downloadCsv } from '../csv';
 
 const US_STATES = [
@@ -46,7 +47,7 @@ const EMPTY = {
   imports: [FormsModule, MatTableModule, MatSortModule, MatPaginatorModule,
     MatCardModule, MatFormFieldModule, MatInputModule, MatSelectModule,
     MatButtonModule, MatIconModule, MatSnackBarModule, PatientInsurance,
-    PatientTreatments],
+    PatientTreatments, PatientEncounters],
   templateUrl: './patients.html',
 })
 export class PatientsPage implements OnInit {

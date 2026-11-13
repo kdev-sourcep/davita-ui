@@ -1,0 +1,213 @@
+<mat-card class="insurance-card">
+  <mat-card-header>
+    <mat-card-title>Clinical Encounters &amp; Charge Capture</mat-card-title>
+    <span class="card-hint">
+      Encounters with product lines — quantities and prices are captured at
+      the time of service
+    </span>
+  </mat-card-header>
+  <mat-card-content>
+    @if (sorted().length) {
+      <table mat-table [dataSource]="sorted()" class="grid compact">
+        <ng-container matColumnDef="date">
+          <th mat-header-cell *matHeaderCellDef>Date</th>
+          <td mat-cell *matCellDef="let r">{{ r.encounter_date }}</td>
+        </ng-container>
+        <ng-container matColumnDef="type">
+          <th mat-header-cell *matHeaderCellDef>Type</th>
+          <td mat-cell *matCellDef="let r">{{ r.encounter_type }}</td>
+        </ng-container>
+        <ng-container matColumnDef="physician">
+          <th mat-header-cell *matHeaderCellDef>Physician</th>
+          <td mat-cell *matCellDef="let r">{{ r.physician_name || '—' }}</td>
+        </ng-container>
+        <ng-container matColumnDef="facility">
+          <th mat-header-cell *matHeaderCellDef>Facility</th>
+          <td mat-cell *matCellDef="let r">{{ r.facility_name || '—' }}</td>
+        </ng-container>
+        <ng-container matColumnDef="status">
+          <th mat-header-cell *matHeaderCellDef>Status</th>
+          <td mat-cell *matCellDef="let r">
+            <span class="status-pill"
+                  [class.inactive]="r.status === 'Scheduled'">
+              {{ r.status }}
+            </span>
+          </td>
+        </ng-container>
+        <ng-container matColumnDef="products">
+          <th mat-header-cell *matHeaderCellDef>Charge Lines</th>
+          <td mat-cell *matCellDef="let r">
+            <button mat-button color="primary" (click)="toggleExpand(r.id)">
+              {{ (r.products ?? []).length }} item(s) ·
+              {{ lineTotal(r) | currency }}
+            </button>
+            @if (expanded() === r.id) {
+              <div class="line-detail">
+                @for (p of r.products; track p.id) {
+                  <div>
+                    {{ p.quantity }} × {{ p.sku }} {{ p.product_name }}
+                    @ {{ p.unit_price_at_time | currency }}
+                    @if (p.lot_number) { · lot {{ p.lot_number }} }
+                    @if (p.billable_code) { · {{ p.billable_code }} }
+                  </div>
+                }
+              </div>
+            }
+          </td>
+        </ng-container>
+        <ng-container matColumnDef="actions">
+          <th mat-header-cell *matHeaderCellDef>Actions</th>
+          <td mat-cell *matCellDef="let r">
+            <button mat-icon-button color="primary"
+                    (click)="select(r); $event.stopPropagation()"
+                    title="Edit">
+              <mat-icon>edit</mat-icon>
+            </button>
+            @if (auth.canDelete()) {
+              <button mat-icon-button color="warn" (click)="remove(r, $event)"
+                      title="Delete">
+                <mat-icon>delete</mat-icon>
+              </button>
+            }
+          </td>
+        </ng-container>
+        <tr mat-header-row *matHeaderRowDef="cols"></tr>
+        <tr mat-row *matRowDef="let row; columns: cols"></tr>
+      </table>
+    } @else {
+      <div class="empty-state">No encounters recorded yet.</div>
+    }
+
+    <div class="divider"></div>
+
+    <h4 id="encounter-form">
+      {{ editing() ? 'Edit Encounter #' + editing()!.id : 'New Encounter' }}
+    </h4>
+    @if (errors().length) {
+      <div class="errors">
+        @for (e of errors(); track e) { <div>⚠ {{ e }}</div> }
+      </div>
+    }
+    <form (ngSubmit)="save()">
+      <div class="form-grid">
+        <mat-form-field><mat-label>Encounter Date *</mat-label>
+          <input matInput type="datetime-local"
+                 [(ngModel)]="form.encounter_date" name="edate" required>
+        </mat-form-field>
+        <mat-form-field><mat-label>Encounter Type *</mat-label>
+          <mat-select [(ngModel)]="form.encounter_type" name="etype" required>
+            <mat-option value="">—</mat-option>
+            @for (t of types(); track t) {
+              <mat-option [value]="t">{{ t }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+        <mat-form-field><mat-label>Status</mat-label>
+          <mat-select [(ngModel)]="form.status" name="status">
+            @for (s of statuses(); track s) {
+              <mat-option [value]="s">{{ s }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+        <mat-form-field class="span2"><mat-label>Physician *</mat-label>
+          <mat-select [(ngModel)]="form.physician_id" name="physician"
+                      required>
+            <mat-option [value]="null">—</mat-option>
+            @for (p of physicians(); track p.id) {
+              <mat-option [value]="p.id">
+                Dr. {{ p.last_name }}, {{ p.first_name }}
+                @if (p.specialty) { — {{ p.specialty }} }
+              </mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+        <mat-form-field class="span2"><mat-label>Facility *</mat-label>
+          <mat-select [(ngModel)]="form.facility_id" name="facility" required>
+            <mat-option [value]="null">—</mat-option>
+            @for (f of facilities(); track f.id) {
+              <mat-option [value]="f.id">
+                {{ f.facility_name }} — {{ f.city }}, {{ f.state }}
+              </mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+        <mat-form-field class="span2"><mat-label>Coverage (optional)</mat-label>
+          <mat-select [(ngModel)]="form.coverage_id" name="coverage">
+            <mat-option [value]="null">—</mat-option>
+            @for (c of coverages(); track c.id) {
+              <mat-option [value]="c.id">
+                {{ c.payer_name }} — priority {{ c.priority_order }}
+              </mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+        <mat-form-field class="span2"><mat-label>Clinical Notes</mat-label>
+          <textarea matInput [(ngModel)]="form.clinical_notes" name="notes"
+                    rows="2" maxlength="2000"></textarea>
+        </mat-form-field>
+      </div>
+
+      <div class="line-editor">
+        <div class="line-editor-head">
+          <strong>Product / Charge Lines</strong>
+          <button mat-stroked-button type="button" (click)="addLine()">
+            <mat-icon>add</mat-icon> Add Line
+          </button>
+        </div>
+        @if (lines.length) {
+          @for (l of lines; track $index) {
+            <div class="line-row">
+              <mat-form-field class="line-product">
+                <mat-label>Product *</mat-label>
+                <mat-select [(ngModel)]="l.product_id"
+                            [name]="'prod' + $index"
+                            (ngModelChange)="onProductPick($index)">
+                  <mat-option [value]="null">—</mat-option>
+                  @for (p of activeCatalog(); track p.id) {
+                    <mat-option [value]="p.id">
+                      {{ p.sku }} — {{ p.product_name }}
+                      ({{ p.unit_cost | currency }}/{{ p.unit_of_measure }})
+                    </mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+              <mat-form-field class="line-num">
+                <mat-label>Qty *</mat-label>
+                <input matInput type="number" min="0.01" step="0.01"
+                       [(ngModel)]="l.quantity" [name]="'qty' + $index">
+              </mat-form-field>
+              <mat-form-field class="line-num">
+                <mat-label>Unit Price *</mat-label>
+                <input matInput type="number" min="0" step="0.01"
+                       [(ngModel)]="l.unit_price_at_time"
+                       [name]="'price' + $index">
+              </mat-form-field>
+              <mat-form-field class="line-lot">
+                <mat-label>Lot #</mat-label>
+                <input matInput [(ngModel)]="l.lot_number"
+                       [name]="'lot' + $index" maxlength="50">
+              </mat-form-field>
+              <button mat-icon-button color="warn" type="button"
+                      (click)="dropLine($index)" title="Remove line">
+                <mat-icon>remove_circle</mat-icon>
+              </button>
+            </div>
+          }
+        } @else {
+          <div class="empty-state small">
+            No charge lines — add one if products or medications were used.
+          </div>
+        }
+      </div>
+
+      <div class="actions">
+        <button mat-flat-button color="primary" type="submit">
+          {{ editing() ? 'Update Encounter' : 'Save Encounter' }}
+        </button>
+        @if (editing()) {
+          <button mat-button type="button" (click)="reset()">Cancel</button>
+        }
+      </div>
+    </form>
+  </mat-card-content>
+</mat-card>

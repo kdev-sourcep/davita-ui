@@ -243,5 +243,6 @@
   @if (editing() && auth.canWrite()) {
     <app-patient-insurance [patientId]="editing()!.id" />
     <app-patient-treatments [patientId]="editing()!.id" />
+    <app-patient-encounters [patientId]="editing()!.id" />
   }
 </div>

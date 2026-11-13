@@ -69,4 +69,9 @@ export class ApiService {
     return this.http.delete(
       `${this.base}/patients/${pid}/insurance/${iid}`);
   }
+
+  // ---- encounters (nested under patient) ----
+  listEncounters<T = any>(pid: number): Observable<T[]> {
+    return this.http.get<T[]>(`${this.base}/patients/${pid}/encounters`);
+  }
 }

@@ -5,6 +5,7 @@ import { PhysiciansPage } from './physicians/physicians';
 import { FacilitiesPage } from './facilities/facilities';
 import { CoveragePage } from './coverage/coverage';
 import { RelationshipsPage } from './relationships/relationships';
+import { ProductsPage } from './products/products';
 import { LoginPage } from './login/login';
 import { UsersPage } from './users/users';
 import { authGuard, adminGuard, loginGuard } from './auth.guard';
@@ -22,6 +23,8 @@ export const routes: Routes = [
     title: 'Facilities — DAVITA' },
   { path: 'insurance', component: CoveragePage, canActivate: [authGuard],
     title: 'Insurance — DAVITA' },
+  { path: 'products', component: ProductsPage, canActivate: [authGuard],
+    title: 'Products — DAVITA' },
   { path: 'network', component: RelationshipsPage, canActivate: [authGuard],
     title: 'Relationship Map — DAVITA' },
   { path: 'users', component: UsersPage, canActivate: [adminGuard],

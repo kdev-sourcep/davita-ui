@@ -712,3 +712,199 @@ def test_relationships_graph(client):
 def test_relationships_empty(client):
     data = client.get("/api/relationships").get_json()
     assert data == {"nodes": [], "links": []}
+
+
+# ------------------------- products & encounters -------------------------
+def make_product(client, **over):
+    body = {"sku": "TST-001", "product_name": "Test Dialyzer",
+            "category": "Dialysis Supply", "unit_of_measure": "unit",
+            "unit_cost": 25.0}
+    body.update(over)
+    return client.post("/api/products", json=body)
+
+
+def make_encounter(client, **over):
+    body = {"patient_id": 1, "physician_id": 1, "facility_id": 1,
+            "encounter_date": "2026-11-10 08:30",
+            "encounter_type": "In-Center Hemodialysis",
+            "status": "Completed", "clinical_notes": "Routine session",
+            "products": []}
+    body.update(over)
+    return client.post("/api/encounters", json=body)
+
+
+def seed_products(client):
+    return client.get("/api/products").get_json()
+
+
+class TestProducts:
+    def test_seed_present(self, client):
+        prods = seed_products(client)
+        assert len(prods) >= 8
+        skus = {p["sku"] for p in prods}
+        assert "DIA-HF-180" in skus and "MED-EPO-4K" in skus
+
+    def test_create_and_read(self, client):
+        r = make_product(client)
+        assert r.status_code == 201
+        p = r.get_json()
+        assert p["sku"] == "TST-001"
+        assert p["is_active"] == 1
+        assert p["updated_at"]
+
+    def test_bad_category(self, client):
+        r = make_product(client, category="Widget")
+        assert r.status_code == 400
+        assert any("category" in e for e in r.get_json()["errors"])
+
+    def test_duplicate_sku(self, client):
+        make_product(client)
+        assert make_product(client).status_code == 409
+
+    def test_negative_cost(self, client):
+        r = make_product(client, unit_cost=-1)
+        assert r.status_code == 400
+        assert any("unit_cost" in e for e in r.get_json()["errors"])
+
+    def test_update_deactivate(self, client):
+        pid = make_product(client).get_json()["id"]
+        r = client.put(f"/api/products/{pid}", json={
+            "sku": "TST-001", "product_name": "Test Dialyzer",
+            "category": "Dialysis Supply", "unit_of_measure": "unit",
+            "unit_cost": 25.0, "is_active": False})
+        assert r.status_code == 200
+        assert r.get_json()["is_active"] == 0
+
+
+class TestEncounters:
+    def _seed(self, client):
+        make_patient(client)
+        make_physician(client)
+        make_facility(client)
+        return make_product(client).get_json()["id"]
+
+    def test_create_with_products(self, client):
+        pid = self._seed(client)
+        r = make_encounter(client, products=[
+            {"product_id": pid, "quantity": 1, "lot_number": "LOT-A",
+             "unit_price_at_time": 25.0},
+            {"product_id": pid, "quantity": 2, "lot_number": "LOT-B",
+             "unit_price_at_time": 25.0}])
+        assert r.status_code == 201
+        e = r.get_json()
+        assert e["patient_name"] == "Doe, John"
+        assert e["physician_name"].startswith("Smith")
+        assert e["facility_name"] == "Denver Dialysis"
+        assert len(e["products"]) == 2
+        assert e["products"][0]["product_name"] == "Test Dialyzer"
+        assert e["products"][0]["sku"] == "TST-001"
+
+    def test_patient_nested_list(self, client):
+        pid = self._seed(client)
+        make_encounter(client, products=[
+            {"product_id": pid, "quantity": 3, "lot_number": "L1",
+             "unit_price_at_time": 10.0}])
+        r = client.get("/api/patients/1/encounters")
+        assert r.status_code == 200
+        data = r.get_json()
+        assert len(data) == 1
+        assert data[0]["products"][0]["quantity"] == 3.0
+        assert data[0]["products"][0]["sku"] == "TST-001"
+
+    def test_missing_fk(self, client):
+        r = client.post("/api/encounters", json={
+            "encounter_date": "2026-11-10",
+            "encounter_type": "Consultation"})
+        assert r.status_code == 400
+        errs = " ".join(r.get_json()["errors"])
+        assert "patient_id is required" in errs
+        assert "physician_id is required" in errs
+        assert "facility_id is required" in errs
+
+    def test_bad_fk(self, client):
+        self._seed(client)
+        pid = 1
+        r = make_encounter(client, patient_id=99)
+        assert r.status_code == 400
+        assert any("patient" in e for e in r.get_json()["errors"])
+
+    def test_bad_type_and_status(self, client):
+        self._seed(client)
+        pid = 1
+        r = make_encounter(client, encounter_type="Warp Drive",
+                           status="On fire")
+        assert r.status_code == 400
+        errs = " ".join(r.get_json()["errors"])
+        assert "encounter_type" in errs and "status" in errs
+
+    def test_bad_date(self, client):
+        self._seed(client)
+        pid = 1
+        r = make_encounter(client, encounter_date="tomorrow")
+        assert r.status_code == 400
+
+    def test_line_validation(self, client):
+        pid = self._seed(client)
+        r = make_encounter(client, products=[
+            {"product_id": 99, "quantity": 1,
+             "unit_price_at_time": 5},
+            {"product_id": pid, "quantity": -2,
+             "unit_price_at_time": 5},
+            {"product_id": pid, "quantity": 1,
+             "unit_price_at_time": -5}])
+        assert r.status_code == 400
+        errs = r.get_json()["errors"]
+        assert any("does not exist" in e for e in errs)
+        assert any("quantity" in e for e in errs)
+        assert any("unit_price_at_time" in e for e in errs)
+        # nothing persisted on a failed transaction
+        assert client.get("/api/encounters").get_json() == []
+
+    def test_update_replaces_lines(self, client):
+        pid = self._seed(client)
+        r = make_encounter(client, products=[
+            {"product_id": pid, "quantity": 1, "unit_price_at_time": 25.0}])
+        eid = r.get_json()["id"]
+        r = client.put(f"/api/encounters/{eid}", json={
+            "patient_id": 1, "physician_id": 1, "facility_id": 1,
+            "encounter_date": "2026-11-11 09:00",
+            "encounter_type": "Consultation", "status": "Billed",
+            "products": []})
+        assert r.status_code == 200
+        assert r.get_json()["products"] == []
+        assert r.get_json()["status"] == "Billed"
+
+    def test_update_keeps_lines_when_omitted(self, client):
+        pid = self._seed(client)
+        r = make_encounter(client, products=[
+            {"product_id": pid, "quantity": 2, "unit_price_at_time": 25.0}])
+        eid = r.get_json()["id"]
+        r = client.put(f"/api/encounters/{eid}", json={
+            "patient_id": 1, "physician_id": 1, "facility_id": 1,
+            "encounter_date": "2026-11-12 07:00",
+            "encounter_type": "Lab Review", "status": "Completed"})
+        assert r.status_code == 200
+        assert len(r.get_json()["products"]) == 1
+
+    def test_delete_cascades_lines(self, client):
+        pid = self._seed(client)
+        r = make_encounter(client, products=[
+            {"product_id": pid, "quantity": 1, "unit_price_at_time": 25.0}])
+        eid = r.get_json()["id"]
+        assert client.delete(f"/api/encounters/{eid}").status_code == 200
+        import sqlite3 as _s
+        con = _s.connect(db.DB_PATH)
+        assert con.execute(
+            "SELECT COUNT(*) FROM encounter_products").fetchone()[0] == 0
+
+    def test_product_delete_blocked_when_linked(self, client):
+        pid = self._seed(client)
+        make_encounter(client, products=[
+            {"product_id": pid, "quantity": 1, "unit_price_at_time": 25.0}])
+        assert client.delete(f"/api/products/{pid}").status_code == 409
+
+    def test_cascade_on_patient_delete(self, client):
+        self._seed(client)
+        make_encounter(client)
+        client.delete("/api/patients/1")
+        assert client.get("/api/encounters").get_json() == []
