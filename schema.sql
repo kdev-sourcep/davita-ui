@@ -191,8 +191,58 @@ CREATE TABLE IF NOT EXISTS encounter_products (
     updated_at        TEXT
 );
 
+-- Lab results captured on an encounter (monthly dialysis labs etc).
+CREATE TABLE IF NOT EXISTS encounter_labs (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    encounter_id      INTEGER NOT NULL REFERENCES encounters(id) ON DELETE CASCADE,
+    test_code         TEXT NOT NULL,          -- e.g. 'K', 'SPKTV'
+    test_name         TEXT NOT NULL,          -- display name at time of result
+    result_value      TEXT NOT NULL,
+    units             TEXT,
+    reference_range   TEXT,
+    flag              TEXT,                   -- Normal / Low / High / Critical
+    collected_at      TEXT,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at        TEXT
+);
+
+-- Medications administered / reconciled during an encounter.
+CREATE TABLE IF NOT EXISTS encounter_medications (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    encounter_id      INTEGER NOT NULL REFERENCES encounters(id) ON DELETE CASCADE,
+    drug_name         TEXT NOT NULL,
+    dose              TEXT NOT NULL,          -- e.g. '4000 units', '10 mg'
+    route             TEXT NOT NULL,          -- IV / PO / SC ...
+    frequency         TEXT,                   -- e.g. 'during dialysis', 'daily'
+    status            TEXT NOT NULL DEFAULT 'Administered',
+    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at        TEXT
+);
+
+-- Treatment run-sheet for the encounter (0..1 rows per encounter):
+-- the actual dialysis run parameters, weights and vascular access.
+CREATE TABLE IF NOT EXISTS encounter_treatments (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    encounter_id      INTEGER NOT NULL UNIQUE REFERENCES encounters(id)
+                      ON DELETE CASCADE,
+    modality          TEXT,
+    duration_minutes  INTEGER,
+    blood_flow_ml_min     INTEGER,          -- Qb
+    dialysate_flow_ml_min INTEGER,          -- Qd
+    ultrafiltration_goal_ml REAL,
+    access_type       TEXT,
+    pre_weight_kg     REAL,
+    post_weight_kg    REAL,
+    dry_weight_kg     REAL,
+    treatment_notes   TEXT,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at        TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_encounters_patient ON encounters(patient_id);
 CREATE INDEX IF NOT EXISTS idx_encounter_products ON encounter_products(encounter_id);
+CREATE INDEX IF NOT EXISTS idx_encounter_labs ON encounter_labs(encounter_id);
+CREATE INDEX IF NOT EXISTS idx_encounter_meds ON encounter_medications(encounter_id);
 
 CREATE INDEX IF NOT EXISTS idx_insurance_patient ON patient_insurance(patient_id);
 CREATE INDEX IF NOT EXISTS idx_insurance_policy  ON patient_insurance(policy_id);

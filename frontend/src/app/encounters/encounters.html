@@ -51,6 +51,55 @@
                     @if (p.billable_code) { · {{ p.billable_code }} }
                   </div>
                 }
+                @if ((r.labs ?? []).length) {
+                  <div class="sub-detail">
+                    <strong>Labs:</strong>
+                    @for (l of r.labs; track l.id) {
+                      <div>
+                        {{ l.test_name }}: {{ l.result_value }}
+                        {{ l.units }}
+                        <span class="status-pill"
+                              [class.inactive]="l.flag === 'Normal'">
+                          {{ l.flag || '—' }}
+                        </span>
+                        @if (l.reference_range) {
+                          (ref {{ l.reference_range }})
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+                @if ((r.medications ?? []).length) {
+                  <div class="sub-detail">
+                    <strong>Medications:</strong>
+                    @for (m of r.medications; track m.id) {
+                      <div>
+                        {{ m.drug_name }} {{ m.dose }} {{ m.route }}
+                        @if (m.frequency) { · {{ m.frequency }} }
+                        · {{ m.status }}
+                      </div>
+                    }
+                  </div>
+                }
+                @if (r.treatment) {
+                  <div class="sub-detail">
+                    <strong>Treatment:</strong>
+                    {{ r.treatment.modality || '—' }}
+                    @if (r.treatment.duration_minutes) {
+                      · {{ r.treatment.duration_minutes }} min
+                    }
+                    @if (r.treatment.blood_flow_ml_min) {
+                      · Qb {{ r.treatment.blood_flow_ml_min }}
+                    }
+                    @if (r.treatment.access_type) {
+                      · {{ r.treatment.access_type }}
+                    }
+                    @if (r.treatment.pre_weight_kg) {
+                      · {{ r.treatment.pre_weight_kg }}→{{
+                        r.treatment.post_weight_kg }} kg
+                    }
+                  </div>
+                }
               </div>
             }
           </td>
@@ -196,6 +245,191 @@
         } @else {
           <div class="empty-state small">
             No charge lines — add one if products or medications were used.
+          </div>
+        }
+      </div>
+
+      <div class="line-editor">
+        <div class="line-editor-head">
+          <strong>Lab Results</strong>
+          <button mat-stroked-button type="button" (click)="addLab()">
+            <mat-icon>science</mat-icon> Add Lab
+          </button>
+        </div>
+        @if (labs.length) {
+          @for (l of labs; track $index) {
+            <div class="line-row">
+              <mat-form-field class="line-product">
+                <mat-label>Test *</mat-label>
+                <mat-select [(ngModel)]="l.test_code" [name]="'lt' + $index"
+                            (ngModelChange)="onLabPick($index)">
+                  <mat-option value="">—</mat-option>
+                  @for (t of labTests(); track t.code) {
+                    <mat-option [value]="t.code">
+                      {{ t.name }} ({{ t.code }})
+                    </mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+              <mat-form-field class="line-num">
+                <mat-label>Result *</mat-label>
+                <input matInput [(ngModel)]="l.result_value"
+                       [name]="'lv' + $index">
+                @if (l.units) { <mat-hint>{{ l.units }}</mat-hint> }
+              </mat-form-field>
+              <mat-form-field class="line-num">
+                <mat-label>Flag</mat-label>
+                <mat-select [(ngModel)]="l.flag" [name]="'lf' + $index">
+                  <mat-option value="">auto</mat-option>
+                  @for (f of labFlags(); track f) {
+                    <mat-option [value]="f">{{ f }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+              <mat-form-field class="line-lot">
+                <mat-label>Reference</mat-label>
+                <input matInput [(ngModel)]="l.reference_range"
+                       [name]="'lr' + $index">
+              </mat-form-field>
+              <mat-form-field class="line-lot">
+                <mat-label>Collected</mat-label>
+                <input matInput type="date" [(ngModel)]="l.collected_at"
+                       [name]="'lc' + $index">
+              </mat-form-field>
+              <button mat-icon-button color="warn" type="button"
+                      (click)="dropLab($index)" title="Remove lab">
+                <mat-icon>remove_circle</mat-icon>
+              </button>
+            </div>
+          }
+        } @else {
+          <div class="empty-state small">
+            No labs — add results such as K, spKt/V, Hemoglobin.
+          </div>
+        }
+      </div>
+
+      <div class="line-editor">
+        <div class="line-editor-head">
+          <strong>Medications</strong>
+          <button mat-stroked-button type="button" (click)="addMed()">
+            <mat-icon>medication</mat-icon> Add Medication
+          </button>
+        </div>
+        @if (meds.length) {
+          @for (m of meds; track $index) {
+            <div class="line-row">
+              <mat-form-field class="line-product">
+                <mat-label>Drug *</mat-label>
+                <input matInput [(ngModel)]="m.drug_name"
+                       [name]="'md' + $index" maxlength="150"
+                       placeholder="e.g. Epoetin Alfa">
+              </mat-form-field>
+              <mat-form-field class="line-lot">
+                <mat-label>Dose *</mat-label>
+                <input matInput [(ngModel)]="m.dose" [name]="'dd' + $index"
+                       maxlength="60" placeholder="4000 units">
+              </mat-form-field>
+              <mat-form-field class="line-num">
+                <mat-label>Route *</mat-label>
+                <mat-select [(ngModel)]="m.route" [name]="'rt' + $index">
+                  <mat-option value="">—</mat-option>
+                  @for (rt of medRoutes(); track rt) {
+                    <mat-option [value]="rt">{{ rt }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+              <mat-form-field class="line-lot">
+                <mat-label>Frequency</mat-label>
+                <input matInput [(ngModel)]="m.frequency"
+                       [name]="'fq' + $index" maxlength="80"
+                       placeholder="end of dialysis">
+              </mat-form-field>
+              <mat-form-field class="line-num">
+                <mat-label>Status</mat-label>
+                <mat-select [(ngModel)]="m.status" [name]="'st' + $index">
+                  @for (s of medStatuses(); track s) {
+                    <mat-option [value]="s">{{ s }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+              <button mat-icon-button color="warn" type="button"
+                      (click)="dropMed($index)" title="Remove med">
+                <mat-icon>remove_circle</mat-icon>
+              </button>
+            </div>
+          }
+        } @else {
+          <div class="empty-state small">
+            No medications — record drugs administered or reconciled.
+          </div>
+        }
+      </div>
+
+      <div class="line-editor">
+        <div class="line-editor-head">
+          <strong>Treatment Run-Sheet</strong>
+          <button mat-stroked-button type="button"
+                  (click)="showTx.set(!showTx())">
+            <mat-icon>{{ showTx() ? 'expand_less' : 'monitor_heart' }}</mat-icon>
+            {{ showTx() ? 'Hide' : 'Add Treatment' }}
+          </button>
+        </div>
+        @if (showTx()) {
+          <div class="form-grid">
+            <mat-form-field><mat-label>Modality</mat-label>
+              <mat-select [(ngModel)]="tx.modality" name="txmod">
+                <mat-option value="">—</mat-option>
+                @for (md of modalities(); track md) {
+                  <mat-option [value]="md">{{ md }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field><mat-label>Duration (min)</mat-label>
+              <input matInput type="number" min="0"
+                     [(ngModel)]="tx.duration_minutes" name="txdur">
+            </mat-form-field>
+            <mat-form-field><mat-label>Blood Flow Qb (mL/min)</mat-label>
+              <input matInput type="number" min="0"
+                     [(ngModel)]="tx.blood_flow_ml_min" name="txqb">
+            </mat-form-field>
+            <mat-form-field><mat-label>Dialysate Qd (mL/min)</mat-label>
+              <input matInput type="number" min="0"
+                     [(ngModel)]="tx.dialysate_flow_ml_min" name="txqd">
+            </mat-form-field>
+            <mat-form-field><mat-label>UF Goal (mL)</mat-label>
+              <input matInput type="number" min="0" step="0.1"
+                     [(ngModel)]="tx.ultrafiltration_goal_ml" name="txuf">
+            </mat-form-field>
+            <mat-form-field><mat-label>Access Type</mat-label>
+              <mat-select [(ngModel)]="tx.access_type" name="txacc">
+                <mat-option value="">—</mat-option>
+                @for (a of accessTypes(); track a) {
+                  <mat-option [value]="a">{{ a }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field><mat-label>Pre-Weight (kg)</mat-label>
+              <input matInput type="number" min="0" step="0.1"
+                     [(ngModel)]="tx.pre_weight_kg" name="txpre">
+            </mat-form-field>
+            <mat-form-field><mat-label>Post-Weight (kg)</mat-label>
+              <input matInput type="number" min="0" step="0.1"
+                     [(ngModel)]="tx.post_weight_kg" name="txpost">
+            </mat-form-field>
+            <mat-form-field><mat-label>Dry Weight (kg)</mat-label>
+              <input matInput type="number" min="0" step="0.1"
+                     [(ngModel)]="tx.dry_weight_kg" name="txdry">
+            </mat-form-field>
+            <mat-form-field class="span2"><mat-label>Treatment Notes</mat-label>
+              <input matInput [(ngModel)]="tx.treatment_notes" name="txnotes"
+                     maxlength="500">
+            </mat-form-field>
+          </div>
+        } @else {
+          <div class="empty-state small">
+            No run-sheet — add one for the delivered dialysis treatment
+            (flow rates, weights, access).
           </div>
         }
       </div>

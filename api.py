@@ -1098,22 +1098,38 @@ ENCOUNTER_DATE_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?$")
 
 
-def _encounter_lines(encounter_ids):
-    """{encounter_id: [product lines]} joined to product name/SKU."""
+def _encounter_children(encounter_ids):
+    """{id: {"products": [...], "labs": [...], "medications": [...],
+             "treatment": {...}|None}} for the given encounters."""
+    out = {eid: {"products": [], "labs": [],
+                 "medications": [], "treatment": None}
+           for eid in encounter_ids}
     if not encounter_ids:
-        return {}
+        return out
     marks = ",".join("?" for _ in encounter_ids)
-    rows = conn().execute(
-        "SELECT ep.id, ep.encounter_id, ep.product_id, ep.quantity, "
-        "       ep.lot_number, ep.unit_price_at_time, "
-        "       pr.product_name, pr.sku, pr.billable_code "
-        "FROM encounter_products ep "
-        "JOIN products pr ON pr.id = ep.product_id "
-        f"WHERE ep.encounter_id IN ({marks}) "
-        "ORDER BY ep.id", encounter_ids).fetchall()
-    out = {eid: [] for eid in encounter_ids}
-    for r in rows:
-        out[r["encounter_id"]].append(dict(r))
+    for r in conn().execute(
+            "SELECT ep.id, ep.encounter_id, ep.product_id, ep.quantity, "
+            "       ep.lot_number, ep.unit_price_at_time, "
+            "       pr.product_name, pr.sku, pr.billable_code "
+            "FROM encounter_products ep "
+            "JOIN products pr ON pr.id = ep.product_id "
+            f"WHERE ep.encounter_id IN ({marks}) "
+            "ORDER BY ep.id", encounter_ids).fetchall():
+        out[r["encounter_id"]]["products"].append(dict(r))
+    for r in conn().execute(
+            "SELECT * FROM encounter_labs "
+            f"WHERE encounter_id IN ({marks}) ORDER BY id",
+            encounter_ids).fetchall():
+        out[r["encounter_id"]]["labs"].append(dict(r))
+    for r in conn().execute(
+            "SELECT * FROM encounter_medications "
+            f"WHERE encounter_id IN ({marks}) ORDER BY id",
+            encounter_ids).fetchall():
+        out[r["encounter_id"]]["medications"].append(dict(r))
+    for r in conn().execute(
+            "SELECT * FROM encounter_treatments "
+            f"WHERE encounter_id IN ({marks})", encounter_ids).fetchall():
+        out[r["encounter_id"]]["treatment"] = dict(r)
     return out
 
 
@@ -1161,14 +1177,157 @@ def clean_encounter(data):
     notes = data.get("clinical_notes")
     v["clinical_notes"] = notes.strip() if isinstance(notes, str) else None
 
-    lines = []
+    children = {"products": [], "labs": [], "medications": [],
+                "treatment": None}
     for i, item in enumerate(data.get("products") or []):
-        pid, err = _encounter_line(i, item)
+        line, err = _encounter_line(i, item)
         if err:
             errors.extend(err)
         else:
-            lines.append(pid)
-    return v, lines, errors
+            children["products"].append(line)
+    for i, item in enumerate(data.get("labs") or []):
+        lab, err = _encounter_lab(i, item)
+        if err:
+            errors.extend(err)
+        else:
+            children["labs"].append(lab)
+    for i, item in enumerate(data.get("medications") or []):
+        med, err = _encounter_med(i, item)
+        if err:
+            errors.extend(err)
+        else:
+            children["medications"].append(med)
+    if data.get("treatment") is not None:
+        if not isinstance(data["treatment"], dict):
+            errors.append("treatment must be an object")
+        else:
+            t, err = _encounter_treatment(data["treatment"])
+            if err:
+                errors.extend(err)
+            else:
+                children["treatment"] = t
+    return v, children, errors
+
+
+def _lab_auto_flag(test_code, result_value, ref_range):
+    """Derive Normal/Low/High when the result is numeric and the
+    reference range is 'a-b' or '>=x'."""
+    try:
+        val = float(str(result_value).strip())
+    except (TypeError, ValueError):
+        return None
+    rng = (ref_range or "").strip()
+    if rng.startswith(">="):
+        try:
+            return "Normal" if val >= float(rng[2:]) else "Low"
+        except ValueError:
+            return None
+    if "-" in rng:
+        try:
+            lo, hi = (float(x) for x in rng.split("-", 1))
+            return "Low" if val < lo else ("High" if val > hi else "Normal")
+        except ValueError:
+            return None
+    return None
+
+
+def _encounter_lab(idx, item):
+    errors = []
+    tests = {t["code"]: t for t in MENU_OPTIONS.get("lab_test_options", [])}
+    code = (item.get("test_code") or "").strip().upper()
+    if not code:
+        errors.append(f"labs[{idx}].test_code is required")
+    elif tests and code not in tests:
+        errors.append(f"labs[{idx}].test_code: unknown test '{code}'")
+    meta = tests.get(code, {})
+    value = str(item.get("result_value") or "").strip()
+    if not value:
+        errors.append(f"labs[{idx}].result_value is required")
+    name = (item.get("test_name") or "").strip() or meta.get("name") or code
+    units = (item.get("units") or "").strip() or meta.get("unit") or None
+    ref = ((item.get("reference_range") or "").strip()
+           or meta.get("ref") or None)
+    flag = (item.get("flag") or "").strip() or None
+    flags = set(MENU_OPTIONS.get("lab_flag_options", []))
+    if flag and flags and flag not in flags:
+        errors.append(f"labs[{idx}].flag must be one of {sorted(flags)}")
+    if not flag:
+        flag = _lab_auto_flag(code, value, ref)
+    coll = (item.get("collected_at") or "").strip() or None
+    if coll and not ENCOUNTER_DATE_RE.match(coll):
+        errors.append(f"labs[{idx}].collected_at: use YYYY-MM-DD[ HH:MM]")
+    if errors:
+        return None, errors
+    return {"test_code": code, "test_name": name, "result_value": value,
+            "units": units, "reference_range": ref, "flag": flag,
+            "collected_at": coll}, None
+
+
+def _encounter_med(idx, item):
+    errors = []
+    name = (item.get("drug_name") or "").strip()
+    if not name:
+        errors.append(f"medications[{idx}].drug_name is required")
+    dose = (item.get("dose") or "").strip()
+    if not dose:
+        errors.append(f"medications[{idx}].dose is required")
+    route = (item.get("route") or "").strip()
+    routes = set(MENU_OPTIONS.get("med_route_options", []))
+    if not route:
+        errors.append(f"medications[{idx}].route is required")
+    elif routes and route not in routes:
+        errors.append(f"medications[{idx}].route must be one of "
+                      f"{sorted(routes)}")
+    status = (item.get("status") or "Administered").strip()
+    st = set(MENU_OPTIONS.get("med_status_options", []))
+    if st and status not in st:
+        errors.append(f"medications[{idx}].status must be one of "
+                      f"{sorted(st)}")
+    freq = (item.get("frequency") or "").strip() or None
+    if errors:
+        return None, errors
+    return {"drug_name": name[:150], "dose": dose[:60], "route": route,
+            "frequency": freq, "status": status}, None
+
+
+def _encounter_treatment(item):
+    errors, t = [], {}
+    mods = set(MENU_OPTIONS.get("modality_options", []))
+    t["modality"] = (item.get("modality") or "").strip() or None
+    if t["modality"] and mods and t["modality"] not in mods:
+        errors.append(f"treatment.modality must be one of {sorted(mods)}")
+    access = set(MENU_OPTIONS.get("access_type_options", []))
+    t["access_type"] = (item.get("access_type") or "").strip() or None
+    if t["access_type"] and access and t["access_type"] not in access:
+        errors.append(f"treatment.access_type must be one of "
+                      f"{sorted(access)}")
+    for f in ("duration_minutes", "blood_flow_ml_min",
+              "dialysate_flow_ml_min"):
+        raw = item.get(f)
+        t[f] = None
+        if raw not in (None, ""):
+            try:
+                t[f] = int(raw)
+                if t[f] < 0:
+                    raise ValueError
+            except (TypeError, ValueError):
+                errors.append(f"treatment.{f} must be a non-negative integer")
+    for f in ("ultrafiltration_goal_ml", "pre_weight_kg", "post_weight_kg",
+              "dry_weight_kg"):
+        raw = item.get(f)
+        t[f] = None
+        if raw not in (None, ""):
+            try:
+                t[f] = float(raw)
+                if t[f] < 0:
+                    raise ValueError
+            except (TypeError, ValueError):
+                errors.append(f"treatment.{f} must be a non-negative number")
+    notes = item.get("treatment_notes")
+    t["treatment_notes"] = notes.strip() if isinstance(notes, str) else None
+    if errors:
+        return None, errors
+    return t, None
 
 
 def _encounter_line(idx, item):
@@ -1215,24 +1374,69 @@ def _encounter_line(idx, item):
 def encounter_view(row, with_lines=True):
     d = dict(row)
     if with_lines:
-        d["products"] = _encounter_lines([d["id"]])[d["id"]]
+        d.update(_encounter_children([d["id"]])[d["id"]])
     return d
 
 
-def insert_encounter(v, lines):
-    cols = ", ".join(v)
-    marks = ", ".join(f":{k}" for k in v)
-    eid = conn().execute(
-        f"INSERT INTO encounters ({cols}, updated_at) "
-        f"VALUES ({marks}, datetime('now'))", v).lastrowid
-    for ln in lines:
+CHILD_TABLES = {"products": "encounter_products",
+                "labs": "encounter_labs",
+                "medications": "encounter_medications"}
+
+
+def _insert_children(eid, children):
+    for ln in children["products"]:
         conn().execute(
             "INSERT INTO encounter_products (encounter_id, product_id, "
             "quantity, lot_number, unit_price_at_time) "
             "VALUES (?, ?, ?, ?, ?)",
             (eid, ln["product_id"], ln["quantity"], ln["lot_number"],
              ln["unit_price_at_time"]))
+    for key, cols in (("labs", ("test_code", "test_name", "result_value",
+                              "units", "reference_range", "flag",
+                              "collected_at")),
+                      ("medications", ("drug_name", "dose", "route",
+                                       "frequency", "status"))):
+        for row in children[key]:
+            marks = ", ".join("?" for _ in cols)
+            conn().execute(
+                f"INSERT INTO {CHILD_TABLES[key]} (encounter_id, "
+                f"{', '.join(cols)}) VALUES (?, {marks})",
+                (eid, *[row[c] for c in cols]))
+    t = children.get("treatment")
+    if t:
+        cols = ", ".join(t)
+        marks = ", ".join("?" for _ in t)
+        conn().execute(
+            f"INSERT INTO encounter_treatments (encounter_id, {cols}) "
+            f"VALUES (?, {marks})", (eid, *t.values()))
+
+
+def insert_encounter(v, children):
+    cols = ", ".join(v)
+    marks = ", ".join(f":{k}" for k in v)
+    eid = conn().execute(
+        f"INSERT INTO encounters ({cols}, updated_at) "
+        f"VALUES ({marks}, datetime('now'))", v).lastrowid
+    _insert_children(eid, children)
     return eid
+
+
+def _replace_children(eid, data, children):
+    """Replace each child set whose key was present in the payload;
+    keys omitted from the payload are left untouched."""
+    empty = {"products": [], "labs": [], "medications": [],
+             "treatment": None}
+    for key in ("products", "labs", "medications"):
+        if key in data:
+            conn().execute(
+                f"DELETE FROM {CHILD_TABLES[key]} WHERE encounter_id = ?",
+                (eid,))
+            _insert_children(eid, {**empty, key: children[key]})
+    if "treatment" in data:
+        conn().execute(
+            "DELETE FROM encounter_treatments WHERE encounter_id = ?", (eid,))
+        _insert_children(eid, {**empty,
+                               "treatment": children.get("treatment")})
 
 
 @app.route("/api/encounters", methods=["GET", "POST", "OPTIONS"])
@@ -1250,12 +1454,12 @@ def encounters_collection():
         return jsonify([encounter_view(r) for r in rows])
 
     data = request.get_json(silent=True) or {}
-    v, lines, errors = clean_encounter(data)
+    v, children, errors = clean_encounter(data)
     if errors:
         return jsonify({"errors": errors}), 400
     try:
-        eid = insert_encounter(v, lines)
-        conn().commit()  # header + lines commit atomically
+        eid = insert_encounter(v, children)
+        conn().commit()  # header + all child rows commit atomically
     except sqlite3.Error as e:
         conn().rollback()
         return jsonify({"errors": [f"database error: {e}"]}), 500
@@ -1288,13 +1492,11 @@ def encounter_record(eid):
         return jsonify({"deleted": True, "id": eid})
 
     data = request.get_json(silent=True) or {}
-    # PUT: 'products' optional — omit to keep existing lines, pass to replace
-    replace_lines = "products" in data
-    if not replace_lines:
-        data = {**data, "products": []}
-        v, _lines, errors = clean_encounter(data)
-    else:
-        v, lines, errors = clean_encounter(data)
+    # PUT: child keys are optional — omit to keep existing rows, pass to
+    # replace ('treatment': null removes the treatment row)
+    v, children, errors = clean_encounter(
+        {**data, **{k: data.get(k, [])
+                    for k in ("products", "labs", "medications")}})
     if errors:
         return jsonify({"errors": errors}), 400
     try:
@@ -1303,17 +1505,7 @@ def encounter_record(eid):
             ", ".join(f"{k} = :{k}" for k in v) +
             ", updated_at = datetime('now') WHERE id = :eid",
             {**v, "eid": eid})
-        if replace_lines:
-            conn().execute(
-                "DELETE FROM encounter_products WHERE encounter_id = ?",
-                (eid,))
-            for ln in lines:
-                conn().execute(
-                    "INSERT INTO encounter_products (encounter_id, "
-                    "product_id, quantity, lot_number, unit_price_at_time) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (eid, ln["product_id"], ln["quantity"], ln["lot_number"],
-                     ln["unit_price_at_time"]))
+        _replace_children(eid, data, children)
         conn().commit()
     except sqlite3.Error as e:
         conn().rollback()
@@ -1331,11 +1523,11 @@ def patient_encounters(pid):
     rows = conn().execute(
         ENCOUNTER_SELECT + " WHERE e.patient_id = ? "
         "ORDER BY e.encounter_date DESC, e.id DESC", (pid,)).fetchall()
-    lines = _encounter_lines([r["id"] for r in rows])
+    kids = _encounter_children([r["id"] for r in rows])
     out = []
     for r in rows:
         d = dict(r)
-        d["products"] = lines[r["id"]]
+        d.update(kids[r["id"]])
         out.append(d)
     return jsonify(out)
 

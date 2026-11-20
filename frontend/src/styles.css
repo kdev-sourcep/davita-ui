@@ -405,3 +405,11 @@ tr.mat-mdc-row.selected:nth-child(even) {
 }
 
 .empty-state.small { padding: 12px; font-size: 13px; }
+
+.line-detail .sub-detail {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed #eceff1;
+}
+
+.line-detail .sub-detail .status-pill { margin-left: 4px; }

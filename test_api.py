@@ -908,3 +908,129 @@ class TestEncounters:
         make_encounter(client)
         client.delete("/api/patients/1")
         assert client.get("/api/encounters").get_json() == []
+
+
+class TestEncounterChildren:
+    """Labs, medications and treatment run-sheet on an encounter."""
+    def _enc(self, client, **kw):
+        make_patient(client)
+        make_physician(client)
+        make_facility(client)
+        return make_encounter(client, **kw)
+
+    def test_full_encounter(self, client):
+        r = self._enc(client,
+            labs=[{"test_code": "K", "result_value": "4.2"},
+                  {"test_code": "SPKTV", "result_value": "1.45"}],
+            medications=[{"drug_name": "Epoetin Alfa", "dose": "4000 units",
+                          "route": "IV", "frequency": "end of dialysis"}],
+            treatment={"modality": "In-Center Hemodialysis",
+                       "duration_minutes": 240,
+                       "blood_flow_ml_min": 400,
+                       "dialysate_flow_ml_min": 600,
+                       "ultrafiltration_goal_ml": 2000,
+                       "access_type": "AV Fistula",
+                       "pre_weight_kg": 72.5, "post_weight_kg": 70.5,
+                       "dry_weight_kg": 70.0,
+                       "treatment_notes": "Tolerated well"})
+        assert r.status_code == 201, r.get_json()
+        e = r.get_json()
+        assert len(e["labs"]) == 2
+        assert e["labs"][0]["test_name"] == "Potassium"
+        assert e["labs"][0]["units"] == "mEq/L"
+        assert e["labs"][0]["reference_range"] == "3.5-5.5"
+        assert e["labs"][0]["flag"] == "Normal"        # auto-flagged
+        assert e["labs"][1]["flag"] == "Normal"        # >=1.2 met
+        assert len(e["medications"]) == 1
+        assert e["medications"][0]["status"] == "Administered"
+        t = e["treatment"]
+        assert t["duration_minutes"] == 240
+        assert t["access_type"] == "AV Fistula"
+
+    def test_auto_flag_high_low(self, client):
+        r = self._enc(client, labs=[
+            {"test_code": "K", "result_value": "6.8"},
+            {"test_code": "HGB", "result_value": "8.2"}])
+        assert r.status_code == 201, r.get_json()
+        labs = r.get_json()["labs"]
+        assert labs[0]["flag"] == "High"
+        assert labs[1]["flag"] == "Low"
+
+    def test_bad_lab_code_and_missing_value(self, client):
+        r = self._enc(client, labs=[
+            {"test_code": "NOPE", "result_value": "1"},
+            {"test_code": "K"}])
+        assert r.status_code == 400
+        errs = r.get_json()["errors"]
+        assert any("unknown test" in e for e in errs)
+        assert any("result_value" in e for e in errs)
+
+    def test_bad_med_and_treatment(self, client):
+        r = self._enc(client,
+            medications=[{"drug_name": "", "dose": "1 tab", "route": "ZZ"}],
+            treatment={"access_type": "Picc Line",
+                       "duration_minutes": -10,
+                       "pre_weight_kg": "abc"})
+        assert r.status_code == 400
+        errs = r.get_json()["errors"]
+        assert any("drug_name" in e for e in errs)
+        assert any("route" in e for e in errs)
+        assert any("access_type" in e for e in errs)
+        assert any("duration_minutes" in e for e in errs)
+        assert any("pre_weight_kg" in e for e in errs)
+        # nothing should have been written — whole encounter rolled back
+        assert client.get("/api/encounters").get_json() == []
+
+    def test_put_replaces_children_independently(self, client):
+        r = self._enc(client,
+            labs=[{"test_code": "K", "result_value": "4.0"}],
+            medications=[{"drug_name": "Heparin", "dose": "2000 units",
+                          "route": "IV"}])
+        eid = r.get_json()["id"]
+        # replace only labs — meds must be preserved
+        r = client.put(f"/api/encounters/{eid}", json={
+            "patient_id": 1, "physician_id": 1, "facility_id": 1,
+            "encounter_date": "2026-11-14 08:00",
+            "encounter_type": "Lab Review", "status": "Completed",
+            "labs": [{"test_code": "PHOS", "result_value": "7.1"}]})
+        assert r.status_code == 200, r.get_json()
+        e = r.get_json()
+        assert [l["test_code"] for l in e["labs"]] == ["PHOS"]
+        assert len(e["medications"]) == 1  # untouched
+
+    def test_put_can_remove_treatment(self, client):
+        r = self._enc(client, treatment={"modality": "In-Center Hemodialysis",
+                                         "duration_minutes": 240})
+        eid = r.get_json()["id"]
+        assert r.get_json()["treatment"]["duration_minutes"] == 240
+        r = client.put(f"/api/encounters/{eid}", json={
+            "patient_id": 1, "physician_id": 1, "facility_id": 1,
+            "encounter_date": "2026-11-14", "encounter_type": "Consultation",
+            "status": "Scheduled", "treatment": None})
+        assert r.status_code == 200
+        assert r.get_json()["treatment"] is None
+
+    def test_nested_list_includes_children(self, client):
+        self._enc(client, labs=[{"test_code": "K", "result_value": "4.4"}],
+                  medications=[{"drug_name": "Epoetin", "dose": "4000 u",
+                                "route": "IV"}])
+        data = client.get("/api/patients/1/encounters").get_json()
+        assert data[0]["labs"][0]["test_code"] == "K"
+        assert data[0]["medications"][0]["drug_name"] == "Epoetin"
+        assert data[0]["treatment"] is None
+
+    def test_delete_cascades_children(self, client):
+        r = self._enc(client,
+            labs=[{"test_code": "K", "result_value": "4.0"}],
+            medications=[{"drug_name": "Heparin", "dose": "2000 u",
+                          "route": "IV"}],
+            treatment={"duration_minutes": 240})
+        eid = r.get_json()["id"]
+        assert client.delete(f"/api/encounters/{eid}").status_code == 200
+        import sqlite3, db
+        c = sqlite3.connect(db.DB_PATH)
+        for tbl in ("encounter_labs", "encounter_medications",
+                    "encounter_treatments"):
+            assert c.execute(
+                f"SELECT COUNT(*) FROM {tbl}").fetchone()[0] == 0
+        c.close()

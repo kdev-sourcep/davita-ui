@@ -249,5 +249,150 @@
     "box",
     "mL",
     "tablet"
+  ],
+  "lab_test_options": [
+    {
+      "code": "NA",
+      "name": "Sodium",
+      "unit": "mEq/L",
+      "ref": "135-145"
+    },
+    {
+      "code": "K",
+      "name": "Potassium",
+      "unit": "mEq/L",
+      "ref": "3.5-5.5"
+    },
+    {
+      "code": "CO2",
+      "name": "Bicarbonate (CO2)",
+      "unit": "mEq/L",
+      "ref": "22-29"
+    },
+    {
+      "code": "BUN",
+      "name": "Blood Urea Nitrogen",
+      "unit": "mg/dL",
+      "ref": "8-20"
+    },
+    {
+      "code": "CR",
+      "name": "Creatinine",
+      "unit": "mg/dL",
+      "ref": "0.6-1.3"
+    },
+    {
+      "code": "GLU",
+      "name": "Glucose",
+      "unit": "mg/dL",
+      "ref": "70-140"
+    },
+    {
+      "code": "CA",
+      "name": "Calcium",
+      "unit": "mg/dL",
+      "ref": "8.4-10.2"
+    },
+    {
+      "code": "PHOS",
+      "name": "Phosphorus",
+      "unit": "mg/dL",
+      "ref": "3.5-5.5"
+    },
+    {
+      "code": "ALB",
+      "name": "Albumin",
+      "unit": "g/dL",
+      "ref": "3.5-5.0"
+    },
+    {
+      "code": "HGB",
+      "name": "Hemoglobin",
+      "unit": "g/dL",
+      "ref": "10-12"
+    },
+    {
+      "code": "HCT",
+      "name": "Hematocrit",
+      "unit": "%",
+      "ref": "30-36"
+    },
+    {
+      "code": "WBC",
+      "name": "White Blood Cells",
+      "unit": "K/uL",
+      "ref": "4.5-11"
+    },
+    {
+      "code": "PLT",
+      "name": "Platelets",
+      "unit": "K/uL",
+      "ref": "150-400"
+    },
+    {
+      "code": "PTH",
+      "name": "Intact PTH",
+      "unit": "pg/mL",
+      "ref": "150-600"
+    },
+    {
+      "code": "FERR",
+      "name": "Ferritin",
+      "unit": "ng/mL",
+      "ref": "200-1200"
+    },
+    {
+      "code": "TSAT",
+      "name": "Transferrin Saturation",
+      "unit": "%",
+      "ref": "20-50"
+    },
+    {
+      "code": "SPKTV",
+      "name": "spKt/V (Adequacy)",
+      "unit": "",
+      "ref": ">=1.2"
+    },
+    {
+      "code": "URR",
+      "name": "Urea Reduction Ratio",
+      "unit": "%",
+      "ref": ">=65"
+    },
+    {
+      "code": "ALKP",
+      "name": "Alkaline Phosphatase",
+      "unit": "U/L",
+      "ref": "40-150"
+    }
+  ],
+  "lab_flag_options": [
+    "Normal",
+    "Low",
+    "High",
+    "Critical Low",
+    "Critical High"
+  ],
+  "med_route_options": [
+    "IV",
+    "PO",
+    "SC",
+    "IM",
+    "Topical",
+    "Intraperitoneal"
+  ],
+  "med_status_options": [
+    "Administered",
+    "Held",
+    "New Order",
+    "Continued",
+    "Discontinued"
+  ],
+  "access_type_options": [
+    "AV Fistula",
+    "AV Graft",
+    "Tunneled Catheter",
+    "Non-tunneled Catheter",
+    "PD Catheter"
   ]
 }

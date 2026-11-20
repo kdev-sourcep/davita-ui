@@ -26,6 +26,25 @@ const EMPTY_LINE = {
   quantity: 1, lot_number: '', unit_price_at_time: 0,
 };
 
+const EMPTY_LAB = {
+  test_code: '', test_name: '', result_value: '', units: '',
+  reference_range: '', flag: '', collected_at: '',
+};
+
+const EMPTY_MED = {
+  drug_name: '', dose: '', route: '', frequency: '', status: 'Administered',
+};
+
+const EMPTY_TX = {
+  modality: '', duration_minutes: null as number | null,
+  blood_flow_ml_min: null as number | null,
+  dialysate_flow_ml_min: null as number | null,
+  ultrafiltration_goal_ml: null as number | null,
+  access_type: '', pre_weight_kg: null as number | null,
+  post_weight_kg: null as number | null,
+  dry_weight_kg: null as number | null, treatment_notes: '',
+};
+
 @Component({
   selector: 'app-patient-encounters',
   imports: [CurrencyPipe, FormsModule, MatTableModule, MatCardModule,
@@ -50,11 +69,21 @@ export class PatientEncounters implements OnInit, OnChanges {
   catalog = signal<any[]>([]);
   types = signal<string[]>([]);
   statuses = signal<string[]>([]);
+  labTests = signal<any[]>([]);
+  labFlags = signal<string[]>([]);
+  medRoutes = signal<string[]>([]);
+  medStatuses = signal<string[]>([]);
+  accessTypes = signal<string[]>([]);
+  modalities = signal<string[]>([]);
   expanded = signal<number | null>(null);
   editing = signal<any | null>(null);
   errors = signal<string[]>([]);
   form: any = { ...EMPTY };
   lines: any[] = [];
+  labs: any[] = [];
+  meds: any[] = [];
+  tx: any = { ...EMPTY_TX };
+  showTx = signal(false);
 
   activeCatalog = computed(() =>
     this.catalog().filter((p) => p.is_active));
@@ -75,6 +104,12 @@ export class PatientEncounters implements OnInit, OnChanges {
       next: (o) => {
         this.types.set(o.encounter_type_options ?? []);
         this.statuses.set(o.encounter_status_options ?? []);
+        this.labTests.set(o.lab_test_options ?? []);
+        this.labFlags.set(o.lab_flag_options ?? []);
+        this.medRoutes.set(o.med_route_options ?? []);
+        this.medStatuses.set(o.med_status_options ?? []);
+        this.accessTypes.set(o.access_type_options ?? []);
+        this.modalities.set(o.modality_options ?? []);
       },
       error: () =>
         this.errors.set(['Could not load menu options — is the API running?']),
@@ -117,6 +152,31 @@ export class PatientEncounters implements OnInit, OnChanges {
     this.lines.splice(i, 1);
   }
 
+  addLab() {
+    this.labs.push({ ...EMPTY_LAB });
+  }
+
+  dropLab(i: number) {
+    this.labs.splice(i, 1);
+  }
+
+  onLabPick(i: number) {
+    const t = this.labTests().find((x) => x.code === this.labs[i].test_code);
+    if (t) {
+      this.labs[i].test_name = t.name;
+      this.labs[i].units = t.unit;
+      this.labs[i].reference_range = t.ref;
+    }
+  }
+
+  addMed() {
+    this.meds.push({ ...EMPTY_MED });
+  }
+
+  dropMed(i: number) {
+    this.meds.splice(i, 1);
+  }
+
   select(row: any) {
     this.editing.set(row);
     this.errors.set([]);
@@ -126,6 +186,11 @@ export class PatientEncounters implements OnInit, OnChanges {
       lot_number: p.lot_number ?? '',
       unit_price_at_time: p.unit_price_at_time,
     }));
+    this.labs = (row.labs ?? []).map((l: any) => ({ ...EMPTY_LAB, ...l }));
+    this.meds = (row.medications ?? [])
+      .map((m: any) => ({ ...EMPTY_MED, ...m }));
+    this.tx = { ...EMPTY_TX, ...(row.treatment ?? {}) };
+    this.showTx.set(!!row.treatment);
     setTimeout(() => document.getElementById('encounter-form')
       ?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
@@ -135,6 +200,10 @@ export class PatientEncounters implements OnInit, OnChanges {
     this.errors.set([]);
     this.form = { ...EMPTY };
     this.lines = [];
+    this.labs = [];
+    this.meds = [];
+    this.tx = { ...EMPTY_TX };
+    this.showTx.set(false);
   }
 
   toggleExpand(id: number) {
@@ -152,6 +221,17 @@ export class PatientEncounters implements OnInit, OnChanges {
         lot_number: l.lot_number,
         unit_price_at_time: l.unit_price_at_time,
       })),
+      labs: this.labs.map((l) => ({
+        test_code: l.test_code, test_name: l.test_name,
+        result_value: l.result_value, units: l.units,
+        reference_range: l.reference_range, flag: l.flag,
+        collected_at: l.collected_at || null,
+      })),
+      medications: this.meds.map((m) => ({
+        drug_name: m.drug_name, dose: m.dose, route: m.route,
+        frequency: m.frequency, status: m.status,
+      })),
+      treatment: this.showTx() ? this.tx : null,
     };
     if (rec) {
       this.api.update('encounters', rec.id, body).subscribe({
